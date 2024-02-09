@@ -1559,6 +1559,8 @@ private:
 
 class Semaphore {
 public:
+  Semaphore() = default;
+
   Semaphore(std::shared_ptr<Device> device) {
     this->device = device;
     auto vk_createInfo =
@@ -1570,10 +1572,24 @@ public:
   }
 
   Semaphore(Semaphore const &) = delete;
-  Semaphore(Semaphore &&) = delete;
+  Semaphore &operator=(Semaphore const &) = delete;
+
+  Semaphore(Semaphore &&other) {
+    *this = std::move(other);
+  }
+
+  Semaphore &operator=(Semaphore &&other) {
+    this->~Semaphore();
+    device = std::move(other.device);
+    semaphore = std::move(other.semaphore);
+    other.semaphore = VK_NULL_HANDLE;
+    return *this;
+  }
 
   ~Semaphore() {
-    device->vkDestroySemaphore(*device, semaphore, nullptr);
+    if (semaphore != VK_NULL_HANDLE)
+      device->vkDestroySemaphore(*device, semaphore, nullptr);
+    semaphore = VK_NULL_HANDLE;
   }
 
   operator VkSemaphore() {
@@ -1587,6 +1603,8 @@ private:
 
 class Fence {
 public:
+  Fence() = default;
+
   Fence(std::shared_ptr<Device> device, bool signalled = false) {
     this->device = device;
     auto vk_createInfo =
@@ -1598,10 +1616,24 @@ public:
   }
 
   Fence(Fence const &) = delete;
-  Fence(Fence &&) = delete;
+  Fence &operator=(Fence const &) = delete;
+
+  Fence(Fence &&other) {
+    *this = std::move(other);
+  }
+
+  Fence &operator=(Fence &&other) {
+    this->~Fence();
+    device = std::move(other.device);
+    fence = std::move(other.fence);
+    other.fence = VK_NULL_HANDLE;
+    return *this;
+  }
 
   ~Fence() {
-    device->vkDestroyFence(*device, fence, nullptr);
+    if (fence != VK_NULL_HANDLE)
+      device->vkDestroyFence(*device, fence, nullptr);
+    fence = VK_NULL_HANDLE;
   }
 
   operator VkFence() {
@@ -1993,35 +2025,50 @@ int main() {
     framebuffers.push_back(framebuffer);
   }
 
-  auto commandPool = std::make_shared<CommandPool>(
-      device, CommandPoolCreateInfo{
-                  .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-                  .queueFamilyIndex = graphicsQueueIndex});
+  struct Frame {
+    std::shared_ptr<CommandPool> commandPool;
+    std::shared_ptr<CommandBuffer> commandBuffer;
+    Fence inFlight;
+    Semaphore imageAvailable, renderFinished;
+  };
 
-  auto commandBuffer = std::make_shared<CommandBuffer>(
-      device,
-      CommandBufferAllocateInfo{.commandPool = commandPool,
-                                .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY});
+  std::vector<Frame> frames;
+  for (int frameIndex = 0; frameIndex < 2; ++frameIndex) {
+    auto commandPool = std::make_shared<CommandPool>(
+        device, CommandPoolCreateInfo{
+                    .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+                    .queueFamilyIndex = graphicsQueueIndex});
 
-  auto inFlightFence = Fence(device, true);
-  auto imageAvailableSemaphore = Semaphore(device);
-  auto renderFinishedSemaphore = Semaphore(device);
+    auto commandBuffer = std::make_shared<CommandBuffer>(
+        device,
+        CommandBufferAllocateInfo{.commandPool = commandPool,
+                                  .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY});
 
+    frames.push_back({.commandPool = commandPool,
+                      .commandBuffer = commandBuffer,
+                      .inFlight = Fence(device, true),
+                      .imageAvailable = Semaphore(device),
+                      .renderFinished = Semaphore(device)});
+  }
+
+  int curFrameIndex = 0;
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();
 
-    inFlightFence.wait();
-    inFlightFence.reset();
+    auto &frame = frames[curFrameIndex];
+
+    frame.inFlight.wait();
+    frame.inFlight.reset();
 
     auto imageIndex =
-        swapchain.acquireNextImage(imageAvailableSemaphore, VK_NULL_HANDLE);
+        swapchain.acquireNextImage(frame.imageAvailable, VK_NULL_HANDLE);
     auto const &framebuffer = framebuffers[imageIndex];
 
-    commandBuffer->reset();
+    frame.commandBuffer->reset();
 
     {
       auto cmdBufRecording = std::make_shared<CommandBufferRecording>(
-          commandBuffer, CommandBufferBeginInfo{.flags = {}});
+          frame.commandBuffer, CommandBufferBeginInfo{.flags = {}});
 
       {
         auto cmdBufRenderPass = CommandBufferRenderPass(
@@ -2052,18 +2099,20 @@ int main() {
     }
 
     graphicsQueue.submit({.waitSemaphoresAndStages =
-                              {{(VkSemaphore)imageAvailableSemaphore,
+                              {{(VkSemaphore)frame.imageAvailable,
                                 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT}},
-                          .commandBuffers = {*commandBuffer},
-                          .signalSemaphores = {renderFinishedSemaphore},
-                          .fence = inFlightFence});
+                          .commandBuffers = {*frame.commandBuffer},
+                          .signalSemaphores = {frame.renderFinished},
+                          .fence = frame.inFlight});
 
-    presentQueue.present({.waitSemaphores = {renderFinishedSemaphore},
+    presentQueue.present({.waitSemaphores = {frame.renderFinished},
                           .swapchainsAndImageIndices = {
                               {(VkSwapchainKHR)swapchain, imageIndex}}});
+
+    curFrameIndex = (curFrameIndex + 1) % frames.size();
   }
 
-  inFlightFence.wait();
+  vkDeviceWaitIdle(*device);
 
   return EXIT_SUCCESS;
 }
