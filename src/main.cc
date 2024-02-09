@@ -112,6 +112,8 @@ Callback<GLFWerrorfun> GLFWLib::onError;
 
 class Window {
 public:
+  Window() = default;
+
   Window(std::shared_ptr<GLFWLib> glfw, int width, int height,
          char const *title) {
     this->glfw = std::move(glfw);
@@ -121,11 +123,30 @@ public:
   }
 
   Window(Window const &) = delete;
-  Window(Window &&) = delete;
+  Window &operator=(Window const &) = delete;
+
+  Window(Window &&other) {
+    *this = std::move(other);
+  }
+
+  Window &operator=(Window &&other) {
+    destroy();
+    onKey = std::move(other.onKey);
+    glfw = std::move(other.glfw);
+    handle = other.handle;
+    other.handle = nullptr;
+    resetCallbacks();
+    return *this;
+  }
 
   ~Window() {
+    destroy();
+  }
+
+  void destroy() {
     if (handle)
       glfwDestroyWindow(handle);
+    handle = nullptr;
   }
 
   operator GLFWwindow *() {
@@ -139,6 +160,9 @@ public:
   typedef void (*OnKey)(int key, int scanCode, int action, int mods);
   Callback<OnKey> onKey;
 
+  typedef void (*OnFramebufferSize)(int width, int height);
+  Callback<OnFramebufferSize> onFramebufferSize;
+
 private:
   std::shared_ptr<GLFWLib> glfw;
   GLFWwindow *handle = nullptr;
@@ -146,12 +170,18 @@ private:
   void resetCallbacks() {
     glfwSetWindowUserPointer(this->handle, this);
     glfwSetKeyCallback(this->handle, _onKey);
+    glfwSetFramebufferSizeCallback(this->handle, _onFramebufferSize);
   }
 
   static void _onKey(GLFWwindow *window, int key, int scanCode, int action,
                      int mods) {
     Window *self = reinterpret_cast<Window *>(glfwGetWindowUserPointer(window));
     self->onKey(key, scanCode, action, mods);
+  }
+
+  static void _onFramebufferSize(GLFWwindow *window, int width, int height) {
+    Window *self = reinterpret_cast<Window *>(glfwGetWindowUserPointer(window));
+    self->onFramebufferSize(width, height);
   }
 };
 
@@ -247,6 +277,8 @@ struct DebugMessengerCreateInfo {
 
 class PhysicalDevice {
 public:
+  PhysicalDevice() = default;
+
   PhysicalDevice(Loader const &loader, VkPhysicalDevice physicalDevice) {
     this->physicalDevice = physicalDevice;
     loader.vkGetPhysicalDeviceProperties(physicalDevice, &properties);
@@ -270,11 +302,13 @@ public:
   std::vector<VkQueueFamilyProperties> queueFamilies;
 
 private:
-  VkPhysicalDevice physicalDevice = {};
+  VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 };
 
 class Instance {
 public:
+  Instance() = default;
+
   Instance(
       std::shared_ptr<Loader> loader, ApplicationInfo const &appInfo,
       InstanceCreateInfo const &instanceCreateInfo,
@@ -333,9 +367,16 @@ public:
     loadFunctions();
   }
 
+  Instance(Instance const &) = delete;
+  Instance &operator=(Instance const &) = delete;
+
+  Instance(Instance &&) = delete;
+  Instance &operator=(Instance &&) = delete;
+
   ~Instance() {
-    if (instance)
+    if (instance != VK_NULL_HANDLE)
       loader->vkDestroyInstance(instance, VK_NULL_HANDLE);
+    instance = VK_NULL_HANDLE;
   }
 
   operator VkInstance() {
@@ -392,7 +433,7 @@ private:
   }
 
   DebugMessengerCreateInfo debugMessengerCreateInfo;
-  VkInstance instance = {};
+  VkInstance instance = VK_NULL_HANDLE;
 };
 
 template <typename Iter, typename Key>
@@ -478,11 +519,15 @@ public:
   }
 
   Device(Device const &) = delete;
+  Device &operator=(Device const &) = delete;
+
   Device(Device &&) = delete;
+  Device &operator=(Device &&) = delete;
 
   ~Device() {
-    if (device)
+    if (device != VK_NULL_HANDLE)
       loader->vkDestroyDevice(device, VK_NULL_HANDLE);
+    device = VK_NULL_HANDLE;
   }
 
   operator VkDevice() {
@@ -523,7 +568,7 @@ public:
 
 private:
   std::shared_ptr<Loader> loader = {};
-  VkDevice device = {};
+  VkDevice device = VK_NULL_HANDLE;
 
   void loadFunctions() {
 #define LOAD(name) this->name = (PFN_##name)vkGetDeviceProcAddr(device, #name)
@@ -562,10 +607,26 @@ private:
 
 class Queue {
 public:
+  Queue() = default;
+
   Queue(std::shared_ptr<Device> device, uint32_t queueFamilyIndex,
         uint32_t queueIndex) {
     this->device = device;
     device->vkGetDeviceQueue(*device, queueFamilyIndex, queueIndex, &queue);
+  }
+
+  Queue(Queue const &) = delete;
+  Queue &operator=(Queue const &) = delete;
+
+  Queue(Queue &&other) {
+    *this = std::move(other);
+  }
+
+  Queue &operator=(Queue &&other) {
+    device = std::move(other.device);
+    queue = other.queue;
+    other.queue = VK_NULL_HANDLE;
+    return *this;
   }
 
   operator VkQueue() {
@@ -594,7 +655,7 @@ public:
     VK_CHECK(device->vkQueueSubmit(queue, 1, &vk_submitInfo, submitInfo.fence));
   }
 
-  void present(QueuePresentInfo const &presentInfo) {
+  VkResult present(QueuePresentInfo const &presentInfo) {
     std::vector<VkSwapchainKHR> swapchains;
     std::vector<uint32_t> imageIndices;
     for (auto const &[swapchain, imageIndex] :
@@ -613,7 +674,7 @@ public:
         .pImageIndices = imageIndices.data(),
         .pResults = nullptr};
 
-    device->vkQueuePresentKHR(queue, &vk_presentInfo);
+    return device->vkQueuePresentKHR(queue, &vk_presentInfo);
   }
 
 private:
@@ -642,7 +703,10 @@ public:
   }
 
   DebugMessenger(DebugMessenger const &) = delete;
+  DebugMessenger &operator=(DebugMessenger const &) = delete;
+
   DebugMessenger(DebugMessenger &&) = delete;
+  DebugMessenger &operator=(DebugMessenger &&) = delete;
 
   ~DebugMessenger() {
     if (messenger)
@@ -682,10 +746,29 @@ public:
   }
 
   Surface(Surface const &) = delete;
-  Surface(Surface &&) = delete;
+  Surface &operator=(Surface const &) = delete;
+
+  Surface(Surface &&other) {
+    *this = std::move(other);
+  }
+
+  Surface &operator=(Surface &&other) {
+    destroy();
+    this->instance = std::move(other.instance);
+    this->loader = std::move(other.loader);
+    surfaceKHR = other.surfaceKHR;
+    other.surfaceKHR = VK_NULL_HANDLE;
+    return *this;
+  }
 
   ~Surface() {
-    instance->vkDestroySurfaceKHR(*instance, surfaceKHR, VK_NULL_HANDLE);
+    destroy();
+  }
+
+  void destroy() {
+    if (surfaceKHR != VK_NULL_HANDLE)
+      instance->vkDestroySurfaceKHR(*instance, surfaceKHR, VK_NULL_HANDLE);
+    surfaceKHR = VK_NULL_HANDLE;
   }
 
   operator VkSurfaceKHR() {
@@ -747,6 +830,8 @@ struct SwapchainCreateInfo {
 
 class Swapchain {
 public:
+  Swapchain() = default;
+
   Swapchain(std::shared_ptr<Device> device,
             SwapchainCreateInfo const &swapchainCreateInfo) {
     this->device = device;
@@ -776,10 +861,28 @@ public:
   }
 
   Swapchain(Swapchain const &) = delete;
-  Swapchain(Swapchain &&) = delete;
+  Swapchain &operator=(Swapchain const &) = delete;
+
+  Swapchain(Swapchain &&other) {
+    *this = std::move(other);
+  }
+
+  Swapchain &operator=(Swapchain &&other) {
+    destroy();
+    device = other.device;
+    swapchain = other.swapchain;
+    other.swapchain = VK_NULL_HANDLE;
+    return *this;
+  }
 
   ~Swapchain() {
-    device->vkDestroySwapchainKHR(*device, swapchain, VK_NULL_HANDLE);
+    destroy();
+  }
+
+  void destroy() {
+    if (swapchain != VK_NULL_HANDLE)
+      device->vkDestroySwapchainKHR(*device, swapchain, VK_NULL_HANDLE);
+    swapchain = VK_NULL_HANDLE;
   }
 
   std::vector<VkImage> getImages() {
@@ -794,11 +897,12 @@ public:
     return swapchainImages;
   }
 
-  uint32_t acquireNextImage(VkSemaphore semaphore, VkFence fence) {
+  std::pair<uint32_t, VkResult> acquireNextImage(VkSemaphore semaphore,
+                                                 VkFence fence) {
     uint32_t imageIndex;
-    device->vkAcquireNextImageKHR(*device, swapchain, UINT64_MAX, semaphore,
-                                  fence, &imageIndex);
-    return imageIndex;
+    VkResult result = device->vkAcquireNextImageKHR(
+        *device, swapchain, UINT64_MAX, semaphore, fence, &imageIndex);
+    return std::make_pair(imageIndex, result);
   }
 
   operator VkSwapchainKHR() {
@@ -848,7 +952,7 @@ public:
   }
 
   ImageView &operator=(ImageView &&other) {
-    this->~ImageView();
+    destroy();
     device = other.device;
     imageView = other.imageView;
     other.imageView = VK_NULL_HANDLE;
@@ -856,7 +960,13 @@ public:
   }
 
   ~ImageView() {
-    device->vkDestroyImageView(*device, imageView, VK_NULL_HANDLE);
+    destroy();
+  }
+
+  void destroy() {
+    if (imageView != VK_NULL_HANDLE)
+      device->vkDestroyImageView(*device, imageView, VK_NULL_HANDLE);
+    imageView = VK_NULL_HANDLE;
   }
 
   operator VkImageView() {
@@ -889,10 +999,28 @@ public:
   }
 
   ShaderModule(ShaderModule const &) = delete;
-  ShaderModule(ShaderModule &&) = delete;
+  ShaderModule &operator=(ShaderModule const &) = delete;
+
+  ShaderModule(ShaderModule &&other) {
+    *this = std::move(other);
+  }
+
+  ShaderModule &operator=(ShaderModule &&other) {
+    destroy();
+    device = std::move(other.device);
+    shaderModule = other.shaderModule;
+    other.shaderModule = VK_NULL_HANDLE;
+    return *this;
+  }
 
   ~ShaderModule() {
-    device->vkDestroyShaderModule(*device, shaderModule, VK_NULL_HANDLE);
+    destroy();
+  }
+
+  void destroy() {
+    if (shaderModule != VK_NULL_HANDLE)
+      device->vkDestroyShaderModule(*device, shaderModule, VK_NULL_HANDLE);
+    shaderModule = VK_NULL_HANDLE;
   }
 
   operator VkShaderModule() {
@@ -935,10 +1063,28 @@ public:
   }
 
   PipelineLayout(PipelineLayout const &) = delete;
-  PipelineLayout(PipelineLayout &&) = delete;
+  PipelineLayout &operator=(PipelineLayout const &) = delete;
+
+  PipelineLayout(PipelineLayout &&other) {
+    *this = std::move(other);
+  }
+
+  PipelineLayout &operator=(PipelineLayout &&other) {
+    destroy();
+    device = std::move(other.device);
+    pipelineLayout = other.pipelineLayout;
+    other.pipelineLayout = VK_NULL_HANDLE;
+    return *this;
+  }
 
   ~PipelineLayout() {
-    device->vkDestroyPipelineLayout(*device, pipelineLayout, VK_NULL_HANDLE);
+    destroy();
+  }
+
+  void destroy() {
+    if (pipelineLayout != VK_NULL_HANDLE)
+      device->vkDestroyPipelineLayout(*device, pipelineLayout, VK_NULL_HANDLE);
+    pipelineLayout = VK_NULL_HANDLE;
   }
 
   operator VkPipelineLayout() {
@@ -947,7 +1093,7 @@ public:
 
 private:
   std::shared_ptr<Device> device = {};
-  VkPipelineLayout pipelineLayout = {};
+  VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
 };
 
 struct SubpassDescription {
@@ -966,6 +1112,8 @@ struct RenderPassCreateInfo {
 
 class RenderPass {
 public:
+  RenderPass() = default;
+
   RenderPass(std::shared_ptr<Device> device,
              RenderPassCreateInfo const &createInfo) {
     this->device = device;
@@ -1001,10 +1149,28 @@ public:
   }
 
   RenderPass(RenderPass const &) = delete;
-  RenderPass(RenderPass &&) = delete;
+  RenderPass &operator=(RenderPass const &) = delete;
+
+  RenderPass(RenderPass &&other) {
+    *this = std::move(other);
+  }
+
+  RenderPass &operator=(RenderPass &&other) {
+    destroy();
+    device = std::move(other.device);
+    renderPass = other.renderPass;
+    other.renderPass = VK_NULL_HANDLE;
+    return *this;
+  }
 
   ~RenderPass() {
-    device->vkDestroyRenderPass(*device, renderPass, VK_NULL_HANDLE);
+    destroy();
+  }
+
+  void destroy() {
+    if (renderPass != VK_NULL_HANDLE)
+      device->vkDestroyRenderPass(*device, renderPass, VK_NULL_HANDLE);
+    renderPass = VK_NULL_HANDLE;
   }
 
   operator VkRenderPass() {
@@ -1013,7 +1179,7 @@ public:
 
 private:
   std::shared_ptr<Device> device = {};
-  VkRenderPass renderPass = {};
+  VkRenderPass renderPass = VK_NULL_HANDLE;
 };
 
 class Pipeline {
@@ -1024,10 +1190,28 @@ public:
       : device{std::move(device)}, pipeline{std::move(pipeline)} {}
 
   Pipeline(Pipeline const &) = delete;
-  Pipeline(Pipeline &&) = delete;
+  Pipeline &operator=(Pipeline const &) = delete;
+
+  Pipeline(Pipeline &&other) {
+    *this = std::move(other);
+  }
+
+  Pipeline &operator=(Pipeline &&other) {
+    destroy();
+    device = std::move(other.device);
+    pipeline = other.pipeline;
+    other.pipeline = VK_NULL_HANDLE;
+    return *this;
+  }
 
   ~Pipeline() {
-    device->vkDestroyPipeline(*device, pipeline, VK_NULL_HANDLE);
+    destroy();
+  }
+
+  void destroy() {
+    if (pipeline != VK_NULL_HANDLE)
+      device->vkDestroyPipeline(*device, pipeline, VK_NULL_HANDLE);
+    pipeline = VK_NULL_HANDLE;
   }
 
   operator VkPipeline() {
@@ -1112,6 +1296,8 @@ struct GraphicsPipelineCreateInfo {
 
 class GraphicsPipeline : public Pipeline {
 public:
+  GraphicsPipeline() = default;
+
   GraphicsPipeline(std::shared_ptr<Device> device,
                    GraphicsPipelineCreateInfo const &createInfo) {
     this->device = device;
@@ -1279,7 +1465,10 @@ public:
   }
 
   GraphicsPipeline(GraphicsPipeline const &) = delete;
-  GraphicsPipeline(GraphicsPipeline &&) = delete;
+  GraphicsPipeline &operator=(GraphicsPipeline const &) = delete;
+
+  GraphicsPipeline(GraphicsPipeline &&other) = default;
+  GraphicsPipeline &operator=(GraphicsPipeline &&other) = default;
 
 private:
   std::shared_ptr<PipelineLayout> pipelineLayout = {};
@@ -1295,6 +1484,8 @@ struct FramebufferCreateInfo {
 
 class Framebuffer {
 public:
+  Framebuffer() = default;
+
   Framebuffer(std::shared_ptr<Device> device,
               FramebufferCreateInfo const &createInfo) {
     this->device = device;
@@ -1322,10 +1513,30 @@ public:
   }
 
   Framebuffer(Framebuffer const &) = delete;
-  Framebuffer(Framebuffer &&) = delete;
+  Framebuffer &operator=(Framebuffer const &) = delete;
+
+  Framebuffer(Framebuffer &&other) {
+    *this = std::move(other);
+  }
+
+  Framebuffer &operator=(Framebuffer &&other) {
+    destroy();
+    device = std::move(other.device);
+    renderPass = std::move(other.renderPass);
+    attachments = std::move(other.attachments);
+    framebuffer = other.framebuffer;
+    other.framebuffer = VK_NULL_HANDLE;
+    return *this;
+  }
 
   ~Framebuffer() {
-    device->vkDestroyFramebuffer(*device, framebuffer, nullptr);
+    destroy();
+  }
+
+  void destroy() {
+    if (framebuffer != VK_NULL_HANDLE)
+      device->vkDestroyFramebuffer(*device, framebuffer, nullptr);
+    framebuffer = VK_NULL_HANDLE;
   }
 
   operator VkFramebuffer() {
@@ -1361,11 +1572,28 @@ public:
   }
 
   CommandPool(CommandPool const &) = delete;
-  CommandPool(CommandPool &&) = delete;
+  CommandPool &operator=(CommandPool const &) = delete;
+
+  CommandPool(CommandPool &&other) {
+    *this = std::move(other);
+  }
+
+  CommandPool &operator=(CommandPool &&other) {
+    destroy();
+    device = std::move(other.device);
+    commandPool = other.commandPool;
+    other.commandPool = VK_NULL_HANDLE;
+    return *this;
+  }
 
   ~CommandPool() {
+    destroy();
+  }
+
+  void destroy() {
     if (commandPool != VK_NULL_HANDLE)
       device->vkDestroyCommandPool(*device, commandPool, nullptr);
+    commandPool = VK_NULL_HANDLE;
   }
 
   operator VkCommandPool() {
@@ -1404,11 +1632,15 @@ public:
   }
 
   CommandBuffer(CommandBuffer const &) = delete;
+  CommandBuffer &operator=(CommandBuffer const &) = delete;
+
   CommandBuffer(CommandBuffer &&) = delete;
+  CommandBuffer &operator=(CommandBuffer &&) = delete;
 
   ~CommandBuffer() {
     if (commandBuffer != VK_NULL_HANDLE)
       device->vkFreeCommandBuffers(*device, *commandPool, 1, &commandBuffer);
+    commandBuffer = VK_NULL_HANDLE;
   }
 
   operator VkCommandBuffer() {
@@ -1579,7 +1811,7 @@ public:
   }
 
   Semaphore &operator=(Semaphore &&other) {
-    this->~Semaphore();
+    destroy();
     device = std::move(other.device);
     semaphore = std::move(other.semaphore);
     other.semaphore = VK_NULL_HANDLE;
@@ -1587,6 +1819,10 @@ public:
   }
 
   ~Semaphore() {
+    destroy();
+  }
+
+  void destroy() {
     if (semaphore != VK_NULL_HANDLE)
       device->vkDestroySemaphore(*device, semaphore, nullptr);
     semaphore = VK_NULL_HANDLE;
@@ -1623,7 +1859,7 @@ public:
   }
 
   Fence &operator=(Fence &&other) {
-    this->~Fence();
+    destroy();
     device = std::move(other.device);
     fence = std::move(other.fence);
     other.fence = VK_NULL_HANDLE;
@@ -1631,6 +1867,10 @@ public:
   }
 
   ~Fence() {
+    destroy();
+  }
+
+  void destroy() {
     if (fence != VK_NULL_HANDLE)
       device->vkDestroyFence(*device, fence, nullptr);
     fence = VK_NULL_HANDLE;
@@ -1825,89 +2065,10 @@ int main() {
   auto graphicsQueue = Queue(device, graphicsQueueIndex, 0),
        presentQueue = Queue(device, presentQueueIndex, 0);
 
-  auto swapchainDetails = surface.getSwapchainDetails(physicalDevice);
-  if (swapchainDetails.formats.empty() || swapchainDetails.presentModes.empty())
-    throw std::runtime_error("VK: swapchain cannot be constructed");
-
-  auto bestFormat = swapchainDetails.formats[0];
-  for (auto const &format : swapchainDetails.formats) {
-    if (format.format == VK_FORMAT_B8G8R8A8_SRGB &&
-        format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-      bestFormat = format;
-      break;
-    }
-  }
-
-  auto bestPresentMode = VK_PRESENT_MODE_FIFO_KHR;
-  for (auto const &presentMode : swapchainDetails.presentModes) {
-    if (presentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
-      bestPresentMode = presentMode;
-      break;
-    }
-  }
-
-  VkExtent2D swapExtent;
-  auto const &capabilities = swapchainDetails.capabilities;
-  if (capabilities.currentExtent.width !=
-      std::numeric_limits<uint32_t>::max()) {
-    swapExtent = capabilities.currentExtent;
-  } else {
-    int width, height;
-    glfwGetFramebufferSize(window, &width, &height);
-
-    VkExtent2D actualExtent = {static_cast<uint32_t>(width),
-                               static_cast<uint32_t>(height)};
-
-    actualExtent.width =
-        std::clamp(actualExtent.width, capabilities.minImageExtent.width,
-                   capabilities.maxImageExtent.width);
-    actualExtent.height =
-        std::clamp(actualExtent.height, capabilities.minImageExtent.height,
-                   capabilities.maxImageExtent.height);
-
-    swapExtent = actualExtent;
-  }
-
-  auto swapchainInfo =
-      SwapchainCreateInfo{.surface = surface,
-                          .minImageCount = capabilities.minImageCount + 1,
-                          .imageFormat = bestFormat.format,
-                          .imageColorSpace = bestFormat.colorSpace,
-                          .imageExtent = swapExtent,
-                          .imageArrayLayers = 1,
-                          .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-                          .imageSharingMode = queueFamilyIndices.size() > 1
-                                                  ? VK_SHARING_MODE_CONCURRENT
-                                                  : VK_SHARING_MODE_EXCLUSIVE,
-                          .queueFamilyIndices = queueFamilyIndices,
-                          .preTransform = capabilities.currentTransform,
-                          .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-                          .presentMode = bestPresentMode,
-                          .clipped = VK_TRUE,
-                          .oldSwapchain = VK_NULL_HANDLE};
-
-  auto swapchain = Swapchain(device, swapchainInfo);
-
-  auto images = swapchain.getImages();
-  std::vector<std::shared_ptr<ImageView>> imageViews;
-  for (auto const &image : images) {
-    imageViews.push_back(std::make_shared<ImageView>(
-        device, ImageViewCreateInfo{
-                    .image = image,
-                    .viewType = VK_IMAGE_VIEW_TYPE_2D,
-                    .format = swapchainInfo.imageFormat,
-                    .components =
-                        VkComponentMapping{.r = VK_COMPONENT_SWIZZLE_IDENTITY,
-                                           .g = VK_COMPONENT_SWIZZLE_IDENTITY,
-                                           .b = VK_COMPONENT_SWIZZLE_IDENTITY,
-                                           .a = VK_COMPONENT_SWIZZLE_IDENTITY},
-                    .subresourceRange = VkImageSubresourceRange{
-                        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                        .baseMipLevel = 0,
-                        .levelCount = 1,
-                        .baseArrayLayer = 0,
-                        .layerCount = 1}}));
-  }
+  bool framebufferResized = false;
+  window.onFramebufferSize = [&](int width, int height) -> void {
+    framebufferResized = true;
+  };
 
   ShaderModuleCreateInfo vertCreateInfo;
   {
@@ -1926,6 +2087,109 @@ int main() {
   auto pipelineLayout = std::make_shared<PipelineLayout>(
       device,
       PipelineLayoutCreateInfo{.setLayouts = {}, .pushConstantRanges = {}});
+
+  Swapchain swapchain;
+  std::vector<VkImage> images;
+  std::vector<std::shared_ptr<ImageView>> imageViews;
+  VkExtent2D swapExtent;
+  SwapchainCreateInfo swapchainInfo;
+  std::vector<std::shared_ptr<Framebuffer>> framebuffers;
+
+  auto createSwapchain = [&]() -> void {
+    vkDeviceWaitIdle(*device);
+
+    auto swapchainDetails = surface.getSwapchainDetails(physicalDevice);
+    if (swapchainDetails.formats.empty() ||
+        swapchainDetails.presentModes.empty())
+      throw std::runtime_error("VK: swapchain cannot be constructed");
+
+    auto bestFormat = swapchainDetails.formats[0];
+    for (auto const &format : swapchainDetails.formats) {
+      if (format.format == VK_FORMAT_B8G8R8A8_SRGB &&
+          format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+        bestFormat = format;
+        break;
+      }
+    }
+
+    auto bestPresentMode = VK_PRESENT_MODE_FIFO_KHR;
+    for (auto const &presentMode : swapchainDetails.presentModes) {
+      if (presentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
+        bestPresentMode = presentMode;
+        break;
+      }
+    }
+    auto const &capabilities = swapchainDetails.capabilities;
+    if (capabilities.currentExtent.width !=
+        std::numeric_limits<uint32_t>::max()) {
+      swapExtent = capabilities.currentExtent;
+    } else {
+      int width = 0, height = 0;
+      glfwGetFramebufferSize(window, &width, &height);
+
+      while (width == 0 || height == 0) {
+        glfwGetFramebufferSize(window, &width, &height);
+        glfwWaitEvents();
+      }
+
+      VkExtent2D actualExtent = {static_cast<uint32_t>(width),
+                                 static_cast<uint32_t>(height)};
+
+      actualExtent.width =
+          std::clamp(actualExtent.width, capabilities.minImageExtent.width,
+                     capabilities.maxImageExtent.width);
+      actualExtent.height =
+          std::clamp(actualExtent.height, capabilities.minImageExtent.height,
+                     capabilities.maxImageExtent.height);
+
+      swapExtent = actualExtent;
+    }
+
+    swapchainInfo =
+        SwapchainCreateInfo{.surface = surface,
+                            .minImageCount = capabilities.minImageCount + 1,
+                            .imageFormat = bestFormat.format,
+                            .imageColorSpace = bestFormat.colorSpace,
+                            .imageExtent = swapExtent,
+                            .imageArrayLayers = 1,
+                            .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                            .imageSharingMode = queueFamilyIndices.size() > 1
+                                                    ? VK_SHARING_MODE_CONCURRENT
+                                                    : VK_SHARING_MODE_EXCLUSIVE,
+                            .queueFamilyIndices = queueFamilyIndices,
+                            .preTransform = capabilities.currentTransform,
+                            .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+                            .presentMode = bestPresentMode,
+                            .clipped = VK_TRUE,
+                            .oldSwapchain = VK_NULL_HANDLE};
+
+    swapchain = Swapchain(device, swapchainInfo);
+
+    images = swapchain.getImages();
+
+    imageViews = {};
+    for (auto const &image : images) {
+      imageViews.push_back(std::make_shared<ImageView>(
+          device,
+          ImageViewCreateInfo{
+              .image = image,
+              .viewType = VK_IMAGE_VIEW_TYPE_2D,
+              .format = swapchainInfo.imageFormat,
+              .components =
+                  VkComponentMapping{.r = VK_COMPONENT_SWIZZLE_IDENTITY,
+                                     .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+                                     .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+                                     .a = VK_COMPONENT_SWIZZLE_IDENTITY},
+              .subresourceRange = VkImageSubresourceRange{
+                  .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                  .baseMipLevel = 0,
+                  .levelCount = 1,
+                  .baseArrayLayer = 0,
+                  .layerCount = 1}}));
+    }
+  };
+
+  createSwapchain();
 
   auto renderPass = std::make_shared<RenderPass>(
       device,
@@ -2015,15 +2279,24 @@ int main() {
           .renderPass = renderPass,
           .subpass = 0});
 
-  std::vector<std::shared_ptr<Framebuffer>> framebuffers;
-  for (auto const &imageView : imageViews) {
-    auto framebuffer = std::make_shared<Framebuffer>(
-        device, FramebufferCreateInfo{.attachments = {imageView},
-                                      .renderPass = renderPass,
-                                      .extent = swapExtent,
-                                      .layers = 1});
-    framebuffers.push_back(framebuffer);
-  }
+  auto createFramebuffers = [&]() -> void {
+    framebuffers = {};
+    for (auto const &imageView : imageViews) {
+      auto framebuffer = std::make_shared<Framebuffer>(
+          device, FramebufferCreateInfo{.attachments = {imageView},
+                                        .renderPass = renderPass,
+                                        .extent = swapExtent,
+                                        .layers = 1});
+      framebuffers.push_back(framebuffer);
+    }
+  };
+
+  createFramebuffers();
+
+  auto recreateSwapchain = [&]() -> void {
+    createSwapchain();
+    createFramebuffers();
+  };
 
   struct Frame {
     std::shared_ptr<CommandPool> commandPool;
@@ -2058,10 +2331,19 @@ int main() {
     auto &frame = frames[curFrameIndex];
 
     frame.inFlight.wait();
+
+    auto [imageIndex, acqResult] =
+        swapchain.acquireNextImage(frame.imageAvailable, VK_NULL_HANDLE);
+
+    if (acqResult == VK_ERROR_OUT_OF_DATE_KHR) {
+      recreateSwapchain();
+      continue;
+    } else if (acqResult != VK_SUCCESS && acqResult != VK_SUBOPTIMAL_KHR) {
+      throw std::runtime_error("vkAcquireNextImageKHR");
+    }
+
     frame.inFlight.reset();
 
-    auto imageIndex =
-        swapchain.acquireNextImage(frame.imageAvailable, VK_NULL_HANDLE);
     auto const &framebuffer = framebuffers[imageIndex];
 
     frame.commandBuffer->reset();
@@ -2105,9 +2387,18 @@ int main() {
                           .signalSemaphores = {frame.renderFinished},
                           .fence = frame.inFlight});
 
-    presentQueue.present({.waitSemaphores = {frame.renderFinished},
-                          .swapchainsAndImageIndices = {
-                              {(VkSwapchainKHR)swapchain, imageIndex}}});
+    auto presResult =
+        presentQueue.present({.waitSemaphores = {frame.renderFinished},
+                              .swapchainsAndImageIndices = {
+                                  {(VkSwapchainKHR)swapchain, imageIndex}}});
+
+    if (presResult == VK_ERROR_OUT_OF_DATE_KHR ||
+        presResult == VK_SUBOPTIMAL_KHR || framebufferResized) {
+      framebufferResized = false;
+      recreateSwapchain();
+    } else if (presResult != VK_SUCCESS) {
+      throw std::runtime_error("vkPresentQueueKHR");
+    }
 
     curFrameIndex = (curFrameIndex + 1) % frames.size();
   }
