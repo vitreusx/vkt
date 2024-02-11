@@ -19,5 +19,6 @@ public:
   MEMBER(vkGetPhysicalDeviceSurfaceFormatsKHR);
   MEMBER(vkGetPhysicalDeviceSurfacePresentModesKHR);
   MEMBER(vkGetPhysicalDeviceMemoryProperties);
+  MEMBER(vkGetPhysicalDeviceSurfaceSupportKHR);
 #undef MEMBER
 };

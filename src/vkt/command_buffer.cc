@@ -47,6 +47,7 @@ void CommandBuffer::loadFunctions() {
   LOAD(vkResetCommandBuffer);
   LOAD(vkCmdPipelineBarrier);
   LOAD(vkCmdBindVertexBuffers);
+  LOAD(vkCmdCopyBuffer);
 #undef LOAD
 }
 
@@ -74,6 +75,12 @@ void CommandBufferRecording::clearColorImage(
   commandBuffer->vkCmdClearColorImage(*commandBuffer, image, imageLayout,
                                       &color, (uint32_t)ranges.size(),
                                       ranges.data());
+}
+
+void CommandBufferRecording::copyBuffer(
+    VkBuffer source, VkBuffer dest, std::vector<VkBufferCopy> const &regions) {
+  commandBuffer->vkCmdCopyBuffer(*commandBuffer, source, dest,
+                                 (uint32_t)regions.size(), regions.data());
 }
 
 CommandBufferRenderPass::CommandBufferRenderPass(

@@ -19,6 +19,8 @@ public:
 
   VkResult present(QueuePresentInfo const &presentInfo);
 
+  void wait();
+
 private:
   std::shared_ptr<Device> device = {};
   VkQueue queue = VK_NULL_HANDLE;

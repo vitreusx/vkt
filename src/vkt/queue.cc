@@ -64,3 +64,7 @@ VkResult Queue::present(QueuePresentInfo const &presentInfo) {
 
   return device->vkQueuePresentKHR(queue, &vk_presentInfo);
 }
+
+void Queue::wait() {
+  VK_CHECK(device->vkQueueWaitIdle(queue));
+}

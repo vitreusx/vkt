@@ -41,6 +41,7 @@ public:
   MEMBER(vkResetCommandBuffer);
   MEMBER(vkCmdPipelineBarrier);
   MEMBER(vkCmdBindVertexBuffers);
+  MEMBER(vkCmdCopyBuffer);
 #undef MEMBER
 
 private:
@@ -68,6 +69,9 @@ public:
   void clearColorImage(VkImage image, VkImageLayout imageLayout,
                        VkClearColorValue const &color,
                        std::vector<VkImageSubresourceRange> const &ranges);
+
+  void copyBuffer(VkBuffer source, VkBuffer dest,
+                  std::vector<VkBufferCopy> const &regions);
 
 public:
   std::shared_ptr<CommandBuffer> commandBuffer;

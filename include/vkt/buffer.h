@@ -1,11 +1,12 @@
 #pragma once
 #include <vkt/device.h>
+#include <set>
 
 struct BufferCreateInfo {
   VkDeviceSize size;
   VkBufferUsageFlags usage;
   VkSharingMode sharingMode;
-  std::vector<uint32_t> queueFamilyIndices;
+  std::set<uint32_t> queueFamilyIndices;
 };
 
 class Buffer {

@@ -4,15 +4,23 @@ Buffer::Buffer(std::shared_ptr<Device> device,
                BufferCreateInfo const &createInfo) {
   this->device = device;
 
+  std::vector<uint32_t> queueFamilyIndices;
+  for (auto const &queueFamilyIndex : createInfo.queueFamilyIndices)
+    queueFamilyIndices.push_back(queueFamilyIndex);
+
+  auto sharingMode = createInfo.sharingMode;
+  if (queueFamilyIndices.size() < 2)
+    sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
   VkBufferCreateInfo vk_createInfo = {
       .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
       .pNext = nullptr,
       .flags = {},
       .size = createInfo.size,
       .usage = createInfo.usage,
-      .sharingMode = createInfo.sharingMode,
-      .queueFamilyIndexCount = (uint32_t)createInfo.queueFamilyIndices.size(),
-      .pQueueFamilyIndices = createInfo.queueFamilyIndices.data()};
+      .sharingMode = sharingMode,
+      .queueFamilyIndexCount = (uint32_t)queueFamilyIndices.size(),
+      .pQueueFamilyIndices = queueFamilyIndices.data()};
 
   VK_CHECK(device->vkCreateBuffer(*device, &vk_createInfo, nullptr, &buffer));
 }

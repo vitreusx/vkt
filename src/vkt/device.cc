@@ -88,5 +88,6 @@ void Device::loadFunctions() {
   LOAD(vkBindBufferMemory);
   LOAD(vkMapMemory);
   LOAD(vkUnmapMemory);
+  LOAD(vkQueueWaitIdle);
 #undef LOAD
 }

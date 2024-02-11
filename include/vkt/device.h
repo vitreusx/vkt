@@ -83,6 +83,7 @@ public:
   MEMBER(vkBindBufferMemory);
   MEMBER(vkMapMemory);
   MEMBER(vkUnmapMemory);
+  MEMBER(vkQueueWaitIdle);
 #undef MEMBER
 
   void loadFunctions();

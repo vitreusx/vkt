@@ -18,5 +18,6 @@ Loader::Loader(PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr) {
   LOAD(vkGetPhysicalDeviceSurfaceFormatsKHR);
   LOAD(vkGetPhysicalDeviceSurfacePresentModesKHR);
   LOAD(vkGetPhysicalDeviceMemoryProperties);
+  LOAD(vkGetPhysicalDeviceSurfaceSupportKHR);
 #undef LOAD
 }

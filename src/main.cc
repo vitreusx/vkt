@@ -135,7 +135,15 @@ int main() {
 
   auto physicalDevices = instance->listPhysicalDevices();
 
-  auto deviceInfo = [&](PhysicalDevice &physicalDevice) {
+  struct DeviceInfo {
+    bool isSuitable;
+    uint32_t score;
+    uint32_t graphicsQueueIndex;
+    uint32_t presentQueueIndex;
+    uint32_t transferQueueIndex;
+  };
+
+  auto getDeviceInfo = [&](PhysicalDevice &physicalDevice) {
     uint32_t score = 0;
     bool isSuitable = true;
 
@@ -152,44 +160,54 @@ int main() {
       score += 1 << 6;
     };
 
-    std::optional<uint32_t> graphicsQueueIndex, presentQueueIndex;
+    std::optional<uint32_t> graphicsQueueIndex, presentQueueIndex,
+        transferQueueIndex;
 
     for (uint32_t index = 0; index < physicalDevice.queueFamilies.size();
          ++index) {
       auto const &queueFamily = physicalDevice.queueFamilies[index];
       if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
         graphicsQueueIndex = index;
+      else if (queueFamily.queueFlags & VK_QUEUE_TRANSFER_BIT)
+        transferQueueIndex = index;
 
       VkBool32 presentSupport = false;
-      vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, index, surface,
-                                           &presentSupport);
+      loader->vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, index,
+                                                   surface, &presentSupport);
       if (presentSupport)
         presentQueueIndex = index;
     }
 
-    if (!graphicsQueueIndex.has_value() || !presentQueueIndex.has_value())
+    if (!transferQueueIndex.has_value())
+      transferQueueIndex = graphicsQueueIndex;
+
+    if (!graphicsQueueIndex.has_value() || !presentQueueIndex.has_value() ||
+        !transferQueueIndex.has_value())
       isSuitable = false;
 
-    return std::make_tuple(isSuitable, score, graphicsQueueIndex.value_or(0),
-                           presentQueueIndex.value_or(0));
+    return DeviceInfo{.isSuitable = isSuitable,
+                      .score = score,
+                      .graphicsQueueIndex = graphicsQueueIndex.value_or(0),
+                      .presentQueueIndex = presentQueueIndex.value_or(0),
+                      .transferQueueIndex = transferQueueIndex.value_or(0)};
   };
 
   auto deviceScore = [&](PhysicalDevice &physicalDevice) {
-    auto [isSuitable, score, _1, _2] = deviceInfo(physicalDevice);
-    return std::make_tuple(isSuitable, score);
+    auto deviceInfo = getDeviceInfo(physicalDevice);
+    return std::make_tuple(deviceInfo.isSuitable, deviceInfo.score);
   };
 
   auto physicalDevice =
       *find_max(physicalDevices.begin(), physicalDevices.end(), deviceScore);
-  auto [isSuitable, _, graphicsQueueIndex, presentQueueIndex] =
-      deviceInfo(physicalDevice);
+  auto deviceInfo = getDeviceInfo(physicalDevice);
 
-  if (!isSuitable)
+  if (!deviceInfo.isSuitable)
     throw std::runtime_error("VK: No suitable devices found");
 
   std::vector<uint32_t> queueFamilyIndices;
-  for (uint32_t index :
-       std::set<uint32_t>{graphicsQueueIndex, presentQueueIndex})
+  for (uint32_t index : std::set<uint32_t>{deviceInfo.graphicsQueueIndex,
+                                           deviceInfo.presentQueueIndex,
+                                           deviceInfo.transferQueueIndex})
     queueFamilyIndices.push_back(index);
 
   std::vector<DeviceQueueCreateInfo> queueCreateInfos;
@@ -202,8 +220,9 @@ int main() {
                        .enabledExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME},
                        .enabledFeatures = physicalDevice.features});
 
-  auto graphicsQueue = Queue(device, graphicsQueueIndex, 0),
-       presentQueue = Queue(device, presentQueueIndex, 0);
+  auto graphicsQueue = Queue(device, deviceInfo.graphicsQueueIndex, 0),
+       presentQueue = Queue(device, deviceInfo.presentQueueIndex, 0),
+       transferQueue = Queue(device, deviceInfo.transferQueueIndex, 0);
 
   bool framebufferResized = false;
   window.onFramebufferSize = [&](int width, int height) -> void {
@@ -368,15 +387,25 @@ int main() {
   auto vertices = std::vector<Vertex>{{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
                                       {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
                                       {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}};
+  auto verticesSize = sizeof(Vertex) * vertices.size();
+
+  auto stagingBuffer = std::make_shared<Buffer>(
+      device,
+      BufferCreateInfo{.size = verticesSize,
+                       .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                       .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+                       .queueFamilyIndices = {deviceInfo.graphicsQueueIndex}});
+  auto stagingMemoryReqs = stagingBuffer->getMemoryRequirements();
 
   auto vertexBuffer = std::make_shared<Buffer>(
       device, BufferCreateInfo{
-                  .size = sizeof(Vertex) * vertices.size(),
-                  .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                  .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-                  .queueFamilyIndices = {graphicsQueueIndex},
+                  .size = verticesSize,
+                  .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+                           VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                  .sharingMode = VK_SHARING_MODE_CONCURRENT,
+                  .queueFamilyIndices = {deviceInfo.graphicsQueueIndex,
+                                         deviceInfo.transferQueueIndex},
               });
-
   auto vbMemoryReqs = vertexBuffer->getMemoryRequirements();
 
   auto findMemoryType = [&](uint32_t memoryTypeMask,
@@ -393,21 +422,56 @@ int main() {
     throw std::runtime_error("Failed to find suitable memory type.");
   };
 
-  VkMemoryPropertyFlags reqMemoryFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-  auto memoryTypeIndex =
-      findMemoryType(vbMemoryReqs.memoryTypeBits, reqMemoryFlags);
+  auto stagingMemory = DeviceMemory(
+      device,
+      MemoryAllocateInfo{.size = stagingMemoryReqs.size,
+                         .memoryTypeIndex = findMemoryType(
+                             stagingMemoryReqs.memoryTypeBits,
+                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)});
+  VK_CHECK(
+      device->vkBindBufferMemory(*device, *stagingBuffer, stagingMemory, 0));
 
   auto vbMemory = DeviceMemory(
       device, MemoryAllocateInfo{.size = vbMemoryReqs.size,
-                                 .memoryTypeIndex = memoryTypeIndex});
-
-  device->vkBindBufferMemory(*device, *vertexBuffer, vbMemory, 0);
+                                 .memoryTypeIndex = findMemoryType(
+                                     vbMemoryReqs.memoryTypeBits,
+                                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)});
+  VK_CHECK(device->vkBindBufferMemory(*device, *vertexBuffer, vbMemory, 0));
 
   {
-    auto vbMemoryMap = vbMemory.map();
-    std::memcpy(vbMemoryMap.get(), vertices.data(),
+    auto stagingMemoryMap = stagingMemory.map();
+    std::memcpy(stagingMemoryMap.get(), vertices.data(),
                 sizeof(Vertex) * vertices.size());
+  }
+
+  {
+    auto commandBuffer = std::make_shared<CommandBuffer>(
+        device, CommandBufferAllocateInfo{
+                    .commandPool = std::make_shared<CommandPool>(
+                        device,
+                        CommandPoolCreateInfo{
+                            .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
+                            .queueFamilyIndex = deviceInfo.transferQueueIndex}),
+                    .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY});
+
+    {
+      auto recording = CommandBufferRecording(
+          commandBuffer,
+          CommandBufferBeginInfo{
+              .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT});
+
+      recording.copyBuffer(*stagingBuffer, *vertexBuffer,
+                           {VkBufferCopy{.size = verticesSize}});
+    }
+
+    transferQueue.submit(QueueSubmitInfo{
+        .waitSemaphoresAndStages = {},
+        .commandBuffers = {(VkCommandBuffer)*commandBuffer},
+        .signalSemaphores = {},
+        .fence = VK_NULL_HANDLE,
+    });
+    transferQueue.wait();
   }
 
   auto pipeline = std::make_shared<GraphicsPipeline>(
@@ -485,7 +549,6 @@ int main() {
   };
 
   struct Frame {
-    std::shared_ptr<CommandPool> commandPool;
     std::shared_ptr<CommandBuffer> commandBuffer;
     Fence inFlight;
     Semaphore imageAvailable, renderFinished;
@@ -493,18 +556,17 @@ int main() {
 
   std::vector<Frame> frames;
   for (int frameIndex = 0; frameIndex < 2; ++frameIndex) {
-    auto commandPool = std::make_shared<CommandPool>(
-        device, CommandPoolCreateInfo{
-                    .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-                    .queueFamilyIndex = graphicsQueueIndex});
-
     auto commandBuffer = std::make_shared<CommandBuffer>(
         device,
-        CommandBufferAllocateInfo{.commandPool = commandPool,
-                                  .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY});
+        CommandBufferAllocateInfo{
+            .commandPool = std::make_shared<CommandPool>(
+                device,
+                CommandPoolCreateInfo{
+                    .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+                    .queueFamilyIndex = deviceInfo.graphicsQueueIndex}),
+            .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY});
 
-    frames.push_back({.commandPool = commandPool,
-                      .commandBuffer = commandBuffer,
+    frames.push_back({.commandBuffer = commandBuffer,
                       .inFlight = Fence(device, true),
                       .imageAvailable = Semaphore(device),
                       .renderFinished = Semaphore(device)});
