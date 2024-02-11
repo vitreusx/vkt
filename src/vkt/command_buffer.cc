@@ -48,6 +48,8 @@ void CommandBuffer::loadFunctions() {
   LOAD(vkCmdPipelineBarrier);
   LOAD(vkCmdBindVertexBuffers);
   LOAD(vkCmdCopyBuffer);
+  LOAD(vkCmdDrawIndexed);
+  LOAD(vkCmdBindIndexBuffer);
 #undef LOAD
 }
 
@@ -144,4 +146,20 @@ void CommandBufferRenderPass::bindVertexBuffers(
   commandBuffer->vkCmdBindVertexBuffers(*commandBuffer, 0,
                                         buffersAndOffsets.size(),
                                         vk_buffers.data(), vk_offsets.data());
+}
+
+void CommandBufferRenderPass::drawIndexed(uint32_t indexCount,
+                                          uint32_t instanceCount,
+                                          uint32_t firstIndex,
+                                          int32_t vertexOffset,
+                                          uint32_t firstInstance) {
+  commandBuffer->vkCmdDrawIndexed(*commandBuffer, indexCount, instanceCount,
+                                  firstIndex, vertexOffset, firstInstance);
+}
+
+void CommandBufferRenderPass::bindIndexBuffer(VkBuffer buffer,
+                                              VkDeviceSize offset,
+                                              VkIndexType indexType) {
+  commandBuffer->vkCmdBindIndexBuffer(*commandBuffer, buffer, offset,
+                                      indexType);
 }

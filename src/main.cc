@@ -384,29 +384,14 @@ int main() {
               .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
               .dependencyFlags = {}}}});
 
-  auto vertices = std::vector<Vertex>{{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-                                      {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-                                      {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}};
+  auto vertices = std::vector<Vertex>{{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+                                      {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+                                      {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+                                      {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}};
   auto verticesSize = sizeof(Vertex) * vertices.size();
 
-  auto stagingBuffer = std::make_shared<Buffer>(
-      device,
-      BufferCreateInfo{.size = verticesSize,
-                       .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                       .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-                       .queueFamilyIndices = {deviceInfo.graphicsQueueIndex}});
-  auto stagingMemoryReqs = stagingBuffer->getMemoryRequirements();
-
-  auto vertexBuffer = std::make_shared<Buffer>(
-      device, BufferCreateInfo{
-                  .size = verticesSize,
-                  .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
-                           VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                  .sharingMode = VK_SHARING_MODE_CONCURRENT,
-                  .queueFamilyIndices = {deviceInfo.graphicsQueueIndex,
-                                         deviceInfo.transferQueueIndex},
-              });
-  auto vbMemoryReqs = vertexBuffer->getMemoryRequirements();
+  auto indices = std::vector<uint32_t>{0, 1, 2, 2, 3, 0};
+  auto indicesSize = sizeof(uint32_t) * indices.size();
 
   auto findMemoryType = [&](uint32_t memoryTypeMask,
                             VkMemoryPropertyFlags propertyFlags) {
@@ -422,15 +407,16 @@ int main() {
     throw std::runtime_error("Failed to find suitable memory type.");
   };
 
-  auto stagingMemory = DeviceMemory(
-      device,
-      MemoryAllocateInfo{.size = stagingMemoryReqs.size,
-                         .memoryTypeIndex = findMemoryType(
-                             stagingMemoryReqs.memoryTypeBits,
-                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)});
-  VK_CHECK(
-      device->vkBindBufferMemory(*device, *stagingBuffer, stagingMemory, 0));
+  auto vertexBuffer = std::make_shared<Buffer>(
+      device, BufferCreateInfo{
+                  .size = verticesSize,
+                  .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+                           VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                  .sharingMode = VK_SHARING_MODE_CONCURRENT,
+                  .queueFamilyIndices = {deviceInfo.graphicsQueueIndex,
+                                         deviceInfo.transferQueueIndex},
+              });
+  auto vbMemoryReqs = vertexBuffer->getMemoryRequirements();
 
   auto vbMemory = DeviceMemory(
       device, MemoryAllocateInfo{.size = vbMemoryReqs.size,
@@ -439,13 +425,45 @@ int main() {
                                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)});
   VK_CHECK(device->vkBindBufferMemory(*device, *vertexBuffer, vbMemory, 0));
 
-  {
-    auto stagingMemoryMap = stagingMemory.map();
-    std::memcpy(stagingMemoryMap.get(), vertices.data(),
-                sizeof(Vertex) * vertices.size());
-  }
+  auto indexBuffer = std::make_shared<Buffer>(
+      device,
+      BufferCreateInfo{.size = indicesSize,
+                       .usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+                                VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                       .sharingMode = VK_SHARING_MODE_CONCURRENT,
+                       .queueFamilyIndices = {deviceInfo.graphicsQueueIndex,
+                                              deviceInfo.transferQueueIndex}});
+  auto ibMemoryReqs = indexBuffer->getMemoryRequirements();
+
+  auto ibMemory = DeviceMemory(
+      device, MemoryAllocateInfo{.size = ibMemoryReqs.size,
+                                 .memoryTypeIndex = findMemoryType(
+                                     ibMemoryReqs.memoryTypeBits,
+                                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)});
+  VK_CHECK(device->vkBindBufferMemory(*device, *indexBuffer, ibMemory, 0));
 
   {
+    auto stagingBuffer = std::make_shared<Buffer>(
+        device, BufferCreateInfo{
+                    .size = verticesSize,
+                    .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                    .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+                    .queueFamilyIndices = {deviceInfo.transferQueueIndex}});
+    auto stagingMemoryReqs = stagingBuffer->getMemoryRequirements();
+
+    auto stagingMemory = DeviceMemory(
+        device,
+        MemoryAllocateInfo{.size = stagingMemoryReqs.size,
+                           .memoryTypeIndex = findMemoryType(
+                               stagingMemoryReqs.memoryTypeBits,
+                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)});
+    VK_CHECK(
+        device->vkBindBufferMemory(*device, *stagingBuffer, stagingMemory, 0));
+
+    auto stagingMemoryMap = stagingMemory.map();
+    std::memcpy(stagingMemoryMap.get(), vertices.data(), verticesSize);
+
     auto commandBuffer = std::make_shared<CommandBuffer>(
         device, CommandBufferAllocateInfo{
                     .commandPool = std::make_shared<CommandPool>(
@@ -463,6 +481,56 @@ int main() {
 
       recording.copyBuffer(*stagingBuffer, *vertexBuffer,
                            {VkBufferCopy{.size = verticesSize}});
+    }
+
+    transferQueue.submit(QueueSubmitInfo{
+        .waitSemaphoresAndStages = {},
+        .commandBuffers = {(VkCommandBuffer)*commandBuffer},
+        .signalSemaphores = {},
+        .fence = VK_NULL_HANDLE,
+    });
+    transferQueue.wait();
+  }
+
+  {
+    auto stagingBuffer = std::make_shared<Buffer>(
+        device, BufferCreateInfo{
+                    .size = indicesSize,
+                    .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                    .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+                    .queueFamilyIndices = {deviceInfo.transferQueueIndex}});
+    auto stagingMemoryReqs = stagingBuffer->getMemoryRequirements();
+
+    auto stagingMemory = DeviceMemory(
+        device,
+        MemoryAllocateInfo{.size = stagingMemoryReqs.size,
+                           .memoryTypeIndex = findMemoryType(
+                               stagingMemoryReqs.memoryTypeBits,
+                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)});
+    VK_CHECK(
+        device->vkBindBufferMemory(*device, *stagingBuffer, stagingMemory, 0));
+
+    auto stagingMemoryMap = stagingMemory.map();
+    std::memcpy(stagingMemoryMap.get(), indices.data(), indicesSize);
+
+    auto commandBuffer = std::make_shared<CommandBuffer>(
+        device, CommandBufferAllocateInfo{
+                    .commandPool = std::make_shared<CommandPool>(
+                        device,
+                        CommandPoolCreateInfo{
+                            .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
+                            .queueFamilyIndex = deviceInfo.transferQueueIndex}),
+                    .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY});
+
+    {
+      auto recording = CommandBufferRecording(
+          commandBuffer,
+          CommandBufferBeginInfo{
+              .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT});
+
+      recording.copyBuffer(*stagingBuffer, *indexBuffer,
+                           {VkBufferCopy{.size = indicesSize}});
     }
 
     transferQueue.submit(QueueSubmitInfo{
@@ -615,6 +683,8 @@ int main() {
 
         cmdBufRenderPass.bindVertexBuffers({{vertexBuffer, (VkDeviceSize)0}});
 
+        cmdBufRenderPass.bindIndexBuffer(*indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
         cmdBufRenderPass.setViewport(
             VkViewport{.x = 0.0f,
                        .y = 0.0f,
@@ -626,7 +696,7 @@ int main() {
         cmdBufRenderPass.setScissor(
             VkRect2D{.offset = {0, 0}, .extent = swapExtent});
 
-        cmdBufRenderPass.draw(3, 1, 0, 0);
+        cmdBufRenderPass.drawIndexed(indices.size(), 1, 0, 0, 0);
       }
     }
 
