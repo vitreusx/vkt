@@ -1,24 +1,40 @@
 cmake_minimum_required(VERSION 3.18)
 project(vkt LANGUAGES C CXX)
 
-set(TARGET example)
-add_executable(${TARGET} src/main.cc)
+set(TARGET vkt)
+add_library(${TARGET})
+set_target_properties(${TARGET} PROPERTIES LINKER_LANGUAGE CXX)
+
+file(GLOB SourceFiles CONFIGURE_DEPENDS
+    src/${TARGET}/*.cc include/${TARGET}/*.h)
+target_sources(${TARGET} PRIVATE ${SourceFiles})
+
+target_include_directories(${TARGET}
+    PUBLIC include)
 
 target_compile_options(${TARGET}
     PRIVATE
     $<$<CONFIG:Debug>:-g>
     $<$<CONFIG:Release>:-O2>)
 
-target_compile_features(${TARGET} PRIVATE cxx_std_20)
+target_compile_features(${TARGET} PUBLIC cxx_std_20)
 
 find_package(glfw3 REQUIRED)
-target_link_libraries(${TARGET} PRIVATE glfw)
+target_link_libraries(${TARGET} PUBLIC glfw)
 
 find_package(Vulkan COMPONENTS glslc REQUIRED)
-target_link_libraries(${TARGET} PRIVATE Vulkan::Vulkan)
+target_link_libraries(${TARGET} PUBLIC Vulkan::Vulkan)
+
+set(TARGET main)
+add_executable(${TARGET} src/main.cc)
+
+target_link_libraries(${TARGET} PRIVATE vkt)
 
 add_subdirectory(ext/spdlog)
 target_link_libraries(${TARGET} PRIVATE spdlog::spdlog)
+
+add_subdirectory(ext/glm)
+target_link_libraries(${TARGET} PRIVATE glm::glm)
 
 function(add_spirv_shader INPUT_FILE OUTPUT_FILE)
     cmake_path(GET OUTPUT_FILE PARENT_PATH OUTPUT_PARENT)

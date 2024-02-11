@@ -73,6 +73,7 @@
         "bitset": "cpp",
         "regex": "cpp",
         "future": "cpp",
-        "expected": "cpp"
+        "expected": "cpp",
+        "unordered_set": "cpp"
     }
 }
