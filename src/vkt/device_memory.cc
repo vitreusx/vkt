@@ -45,20 +45,21 @@ void DeviceMemory::destroy() {
   deviceMemory = VK_NULL_HANDLE;
 }
 
-std::shared_ptr<void> DeviceMemory::map(VkDeviceSize offset,
-                                        VkDeviceSize size) {
-  size = std::min(size, allocationSize);
+std::shared_ptr<void>
+DeviceMemory::map(std::shared_ptr<DeviceMemory> deviceMemory,
+                  VkDeviceSize offset, VkDeviceSize size) {
+  size = std::min(size, deviceMemory->allocationSize);
 
   void *ptr;
-  VK_CHECK(device->vkMapMemory(*device, deviceMemory, offset, size, {}, &ptr));
+  VK_CHECK(deviceMemory->device->vkMapMemory(*deviceMemory->device,
+                                             deviceMemory->deviceMemory, offset,
+                                             size, {}, &ptr));
 
-  auto device = this->device;
-  auto deviceMemory = this->deviceMemory;
-  return std::shared_ptr<void>(ptr, [this](void *ptr) -> void {
-    this->unmapMemory(ptr);
+  return std::shared_ptr<void>(ptr, [deviceMemory](void *ptr) -> void {
+    deviceMemory->unmapMemory();
   });
 }
 
-void DeviceMemory::unmapMemory(void *ptr) {
+void DeviceMemory::unmapMemory() {
   device->vkUnmapMemory(*device, deviceMemory);
 }

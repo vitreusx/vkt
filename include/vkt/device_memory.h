@@ -1,7 +1,7 @@
 #pragma once
-
 #include <vkt/device.h>
 #include <memory>
+#include <limits>
 
 struct MemoryAllocateInfo {
   VkDeviceSize size;
@@ -23,8 +23,9 @@ public:
 
   operator VkDeviceMemory();
 
-  std::shared_ptr<void> map(VkDeviceSize offset = 0,
-                            VkDeviceSize size = UINT64_MAX);
+  static std::shared_ptr<void>
+  map(std::shared_ptr<DeviceMemory> deviceMemory, VkDeviceSize offset = 0,
+      VkDeviceSize size = std::numeric_limits<VkDeviceSize>::max());
 
 private:
   std::shared_ptr<Device> device = {};
@@ -32,6 +33,5 @@ private:
   VkDeviceSize allocationSize = 0;
 
   void destroy();
-
-  void unmapMemory(void *ptr);
+  void unmapMemory();
 };

@@ -482,7 +482,7 @@ int main() {
                     .queueFamilyIndices = {deviceInfo.transferQueueIndex}});
     auto stagingMemoryReqs = stagingBuffer->getMemoryRequirements();
 
-    auto stagingMemory = DeviceMemory(
+    auto stagingMemory = std::make_shared<DeviceMemory>(
         device,
         MemoryAllocateInfo{.size = stagingMemoryReqs.size,
                            .memoryTypeIndex = findMemoryType(
@@ -490,9 +490,9 @@ int main() {
                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)});
     VK_CHECK(
-        device->vkBindBufferMemory(*device, *stagingBuffer, stagingMemory, 0));
+        device->vkBindBufferMemory(*device, *stagingBuffer, *stagingMemory, 0));
 
-    auto stagingMemoryMap = stagingMemory.map();
+    auto stagingMemoryMap = DeviceMemory::map(stagingMemory);
     std::memcpy(stagingMemoryMap.get(), vertices.data(), verticesSize);
 
     auto commandBuffer = std::make_shared<CommandBuffer>(
@@ -532,7 +532,7 @@ int main() {
                     .queueFamilyIndices = {deviceInfo.transferQueueIndex}});
     auto stagingMemoryReqs = stagingBuffer->getMemoryRequirements();
 
-    auto stagingMemory = DeviceMemory(
+    auto stagingMemory = std::make_shared<DeviceMemory>(
         device,
         MemoryAllocateInfo{.size = stagingMemoryReqs.size,
                            .memoryTypeIndex = findMemoryType(
@@ -540,9 +540,9 @@ int main() {
                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)});
     VK_CHECK(
-        device->vkBindBufferMemory(*device, *stagingBuffer, stagingMemory, 0));
+        device->vkBindBufferMemory(*device, *stagingBuffer, *stagingMemory, 0));
 
-    auto stagingMemoryMap = stagingMemory.map();
+    auto stagingMemoryMap = DeviceMemory::map(stagingMemory);
     std::memcpy(stagingMemoryMap.get(), indices.data(), indicesSize);
 
     auto commandBuffer = std::make_shared<CommandBuffer>(
@@ -652,7 +652,6 @@ int main() {
     Fence inFlight;
     Semaphore imageAvailable, renderFinished;
     std::shared_ptr<Buffer> unifBuffer;
-    DeviceMemory unifMemory;
     std::shared_ptr<void> unifMemoryPtr;
     VkDescriptorSet descriptorSet;
   };
@@ -677,16 +676,16 @@ int main() {
                     .queueFamilyIndices = {deviceInfo.graphicsQueueIndex}});
     auto unifMemoryReqs = unifBuffer->getMemoryRequirements();
 
-    auto unifMemory = DeviceMemory(
+    auto unifMemory = std::make_shared<DeviceMemory>(
         device,
         MemoryAllocateInfo{.size = unifMemoryReqs.size,
                            .memoryTypeIndex = findMemoryType(
                                unifMemoryReqs.memoryTypeBits,
                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)});
-    VK_CHECK(device->vkBindBufferMemory(*device, *unifBuffer, unifMemory, 0));
+    VK_CHECK(device->vkBindBufferMemory(*device, *unifBuffer, *unifMemory, 0));
 
-    auto unifMemoryPtr = unifMemory.map();
+    auto unifMemoryPtr = DeviceMemory::map(unifMemory);
 
     auto descriptorSet = unifDescriptorSets[frameIndex];
 
@@ -705,7 +704,6 @@ int main() {
                            .imageAvailable = Semaphore(device),
                            .renderFinished = Semaphore(device),
                            .unifBuffer = unifBuffer,
-                           .unifMemory = std::move(unifMemory),
                            .unifMemoryPtr = unifMemoryPtr,
                            .descriptorSet = descriptorSet});
   }
