@@ -23,3 +23,5 @@
 #include "surface.h"
 #include "swapchain.h"
 #include "utils.h"
+#include "descriptor_set_layout.h"
+#include "descriptor_pool.h"

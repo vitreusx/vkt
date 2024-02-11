@@ -84,6 +84,12 @@ public:
   MEMBER(vkMapMemory);
   MEMBER(vkUnmapMemory);
   MEMBER(vkQueueWaitIdle);
+  MEMBER(vkCreateDescriptorSetLayout);
+  MEMBER(vkDestroyDescriptorSetLayout);
+  MEMBER(vkCreateDescriptorPool);
+  MEMBER(vkDestroyDescriptorPool);
+  MEMBER(vkAllocateDescriptorSets);
+  MEMBER(vkUpdateDescriptorSets);
 #undef MEMBER
 
   void loadFunctions();

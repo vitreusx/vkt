@@ -44,6 +44,7 @@ public:
   MEMBER(vkCmdCopyBuffer);
   MEMBER(vkCmdDrawIndexed);
   MEMBER(vkCmdBindIndexBuffer);
+  MEMBER(vkCmdBindDescriptorSets);
 #undef MEMBER
 
 private:
@@ -74,6 +75,12 @@ public:
 
   void copyBuffer(VkBuffer source, VkBuffer dest,
                   std::vector<VkBufferCopy> const &regions);
+
+  void bindDescriptorSets(VkPipelineBindPoint pipelineBindPoint,
+                          VkPipelineLayout layout, uint32_t firstSet,
+                          std::vector<VkDescriptorSet> const &descriptorSets,
+                          std::optional<std::vector<uint32_t>> const
+                              &dynamicOffsets = std::nullopt);
 
 public:
   std::shared_ptr<CommandBuffer> commandBuffer;

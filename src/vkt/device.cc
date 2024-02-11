@@ -89,5 +89,11 @@ void Device::loadFunctions() {
   LOAD(vkMapMemory);
   LOAD(vkUnmapMemory);
   LOAD(vkQueueWaitIdle);
+  LOAD(vkCreateDescriptorSetLayout);
+  LOAD(vkDestroyDescriptorSetLayout);
+  LOAD(vkCreateDescriptorPool);
+  LOAD(vkDestroyDescriptorPool);
+  LOAD(vkAllocateDescriptorSets);
+  LOAD(vkUpdateDescriptorSets);
 #undef LOAD
 }

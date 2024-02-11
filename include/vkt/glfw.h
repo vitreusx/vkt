@@ -36,11 +36,20 @@ public:
 
   operator GLFWwindow *();
 
+  std::pair<int, int> getWindowSize();
+
+public:
   typedef void (*OnKey)(int key, int scanCode, int action, int mods);
   Callback<OnKey> onKey;
 
   typedef void (*OnFramebufferSize)(int width, int height);
   Callback<OnFramebufferSize> onFramebufferSize;
+
+  typedef void (*OnCursorPos)(double xpos, double ypos);
+  Callback<OnCursorPos> onCursorPos;
+
+  typedef void (*OnScroll)(double xoffset, double yoffset);
+  Callback<OnScroll> onScroll;
 
 private:
   std::shared_ptr<GLFWLib> glfw;
@@ -51,4 +60,6 @@ private:
   static void _onKey(GLFWwindow *window, int key, int scanCode, int action,
                      int mods);
   static void _onFramebufferSize(GLFWwindow *window, int width, int height);
+  static void _onCursorPos(GLFWwindow *window, double xpos, double ypos);
+  static void _onScroll(GLFWwindow *window, double xoffset, double yoffset);
 };

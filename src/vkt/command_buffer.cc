@@ -50,6 +50,7 @@ void CommandBuffer::loadFunctions() {
   LOAD(vkCmdCopyBuffer);
   LOAD(vkCmdDrawIndexed);
   LOAD(vkCmdBindIndexBuffer);
+  LOAD(vkCmdBindDescriptorSets);
 #undef LOAD
 }
 
@@ -83,6 +84,22 @@ void CommandBufferRecording::copyBuffer(
     VkBuffer source, VkBuffer dest, std::vector<VkBufferCopy> const &regions) {
   commandBuffer->vkCmdCopyBuffer(*commandBuffer, source, dest,
                                  (uint32_t)regions.size(), regions.data());
+}
+
+void CommandBufferRecording::bindDescriptorSets(
+    VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout,
+    uint32_t firstSet, std::vector<VkDescriptorSet> const &descriptorSets,
+    std::optional<std::vector<uint32_t>> const &dynamicOffsets) {
+  uint32_t dynamicOffsetCount = 0;
+  uint32_t const *pDynamicOffsets = nullptr;
+  if (dynamicOffsets.has_value()) {
+    dynamicOffsetCount = dynamicOffsets.value().size();
+    pDynamicOffsets = dynamicOffsets.value().data();
+  }
+  commandBuffer->vkCmdBindDescriptorSets(
+      *commandBuffer, pipelineBindPoint, layout, firstSet,
+      (uint32_t)descriptorSets.size(), descriptorSets.data(),
+      dynamicOffsetCount, pDynamicOffsets);
 }
 
 CommandBufferRenderPass::CommandBufferRenderPass(

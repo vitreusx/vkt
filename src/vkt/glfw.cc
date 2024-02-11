@@ -61,10 +61,18 @@ Window::operator GLFWwindow *() {
   return handle;
 }
 
+std::pair<int, int> Window::getWindowSize() {
+  auto size = std::make_pair(0, 0);
+  glfwGetWindowSize(handle, &size.first, &size.second);
+  return size;
+}
+
 void Window::resetCallbacks() {
   glfwSetWindowUserPointer(this->handle, this);
   glfwSetKeyCallback(this->handle, _onKey);
   glfwSetFramebufferSizeCallback(this->handle, _onFramebufferSize);
+  glfwSetCursorPosCallback(this->handle, _onCursorPos);
+  glfwSetScrollCallback(this->handle, _onScroll);
 }
 
 void Window::_onKey(GLFWwindow *window, int key, int scanCode, int action,
@@ -76,4 +84,14 @@ void Window::_onKey(GLFWwindow *window, int key, int scanCode, int action,
 void Window::_onFramebufferSize(GLFWwindow *window, int width, int height) {
   Window *self = reinterpret_cast<Window *>(glfwGetWindowUserPointer(window));
   self->onFramebufferSize(width, height);
+}
+
+void Window::_onCursorPos(GLFWwindow *window, double xpos, double ypos) {
+  Window *self = reinterpret_cast<Window *>(glfwGetWindowUserPointer(window));
+  self->onCursorPos(xpos, ypos);
+}
+
+void Window::_onScroll(GLFWwindow *window, double xoffset, double yoffset) {
+  Window *self = reinterpret_cast<Window *>(glfwGetWindowUserPointer(window));
+  self->onScroll(xoffset, yoffset);
 }

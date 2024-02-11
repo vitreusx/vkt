@@ -6,7 +6,10 @@
 #include <set>
 #include <fstream>
 #include <chrono>
+#define GLM_FORCE_RADIANS
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <vkt/vkt.h>
 
 struct Vertex {
@@ -33,6 +36,19 @@ struct Vertex {
   }
 };
 
+struct UniformValues {
+  alignas(16) glm::mat4 mvp;
+
+  static VkDescriptorSetLayoutBinding binding(uint32_t bindingIndex = 0) {
+    return VkDescriptorSetLayoutBinding{
+        .binding = bindingIndex,
+        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+        .pImmutableSamplers = nullptr};
+  }
+};
+
 int main() {
 #ifndef NDEBUG
   spdlog::set_level(spdlog::level::debug);
@@ -44,11 +60,6 @@ int main() {
   auto glfw = GLFWLib::getInstance(onError);
 
   auto window = Window(glfw, 800, 600, "vkt");
-
-  window.onKey = [&](int key, int scanCode, int action, int mods) {
-    if (key == GLFW_KEY_ESCAPE)
-      glfwSetWindowShouldClose(window, GLFW_TRUE);
-  };
 
   auto loader = std::make_shared<Loader>(glfwGetInstanceProcAddress);
 
@@ -243,9 +254,29 @@ int main() {
   }
   auto fragShader = std::make_shared<ShaderModule>(device, fragCreateInfo);
 
-  auto pipelineLayout = std::make_shared<PipelineLayout>(
+  UniformValues unif;
+
+  auto unifDescriptorSetLayout = std::make_shared<DescriptorSetLayout>(
+      device, DescriptorSetLayoutCreateInfo{
+                  .flags = {}, .bindings = {UniformValues::binding(0)}});
+
+  uint32_t maxFramesInFlight = 2;
+
+  auto unifDescriptorPool = DescriptorPool(
       device,
-      PipelineLayoutCreateInfo{.setLayouts = {}, .pushConstantRanges = {}});
+      DescriptorPoolCreateInfo{.maxSets = maxFramesInFlight,
+                               .poolSizes = {VkDescriptorPoolSize{
+                                   .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                                   .descriptorCount = maxFramesInFlight}}});
+
+  auto unifDescriptorSets =
+      unifDescriptorPool.allocateDescriptorSets(DescriptorSetAllocateInfo{
+          .setLayouts = std::vector<std::shared_ptr<DescriptorSetLayout>>(
+              maxFramesInFlight, unifDescriptorSetLayout)});
+
+  auto pipelineLayout = std::make_shared<PipelineLayout>(
+      device, PipelineLayoutCreateInfo{.setLayouts = {*unifDescriptorSetLayout},
+                                       .pushConstantRanges = {}});
 
   Swapchain swapchain;
   std::vector<VkImage> images;
@@ -563,7 +594,7 @@ int main() {
           .rasterizationState = {.depthClampEnable = VK_FALSE,
                                  .rasterizerDiscardEnable = VK_FALSE,
                                  .polygonMode = VK_POLYGON_MODE_FILL,
-                                 .cullMode = VK_CULL_MODE_BACK_BIT,
+                                 .cullMode = VK_CULL_MODE_NONE,
                                  .frontFace = VK_FRONT_FACE_CLOCKWISE,
                                  .depthBiasEnable = VK_FALSE,
                                  .depthBiasConstantFactor = 0.0f,
@@ -620,10 +651,14 @@ int main() {
     std::shared_ptr<CommandBuffer> commandBuffer;
     Fence inFlight;
     Semaphore imageAvailable, renderFinished;
+    std::shared_ptr<Buffer> unifBuffer;
+    DeviceMemory unifMemory;
+    std::shared_ptr<void> unifMemoryPtr;
+    VkDescriptorSet descriptorSet;
   };
 
   std::vector<Frame> frames;
-  for (int frameIndex = 0; frameIndex < 2; ++frameIndex) {
+  for (int frameIndex = 0; frameIndex < maxFramesInFlight; ++frameIndex) {
     auto commandBuffer = std::make_shared<CommandBuffer>(
         device,
         CommandBufferAllocateInfo{
@@ -634,17 +669,144 @@ int main() {
                     .queueFamilyIndex = deviceInfo.graphicsQueueIndex}),
             .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY});
 
-    frames.push_back({.commandBuffer = commandBuffer,
-                      .inFlight = Fence(device, true),
-                      .imageAvailable = Semaphore(device),
-                      .renderFinished = Semaphore(device)});
+    auto unifBuffer = std::make_shared<Buffer>(
+        device, BufferCreateInfo{
+                    .size = sizeof(unif),
+                    .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                    .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+                    .queueFamilyIndices = {deviceInfo.graphicsQueueIndex}});
+    auto unifMemoryReqs = unifBuffer->getMemoryRequirements();
+
+    auto unifMemory = DeviceMemory(
+        device,
+        MemoryAllocateInfo{.size = unifMemoryReqs.size,
+                           .memoryTypeIndex = findMemoryType(
+                               unifMemoryReqs.memoryTypeBits,
+                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)});
+    VK_CHECK(device->vkBindBufferMemory(*device, *unifBuffer, unifMemory, 0));
+
+    auto unifMemoryPtr = unifMemory.map();
+
+    auto descriptorSet = unifDescriptorSets[frameIndex];
+
+    unifDescriptorPool.updateDescriptorSets(
+        {WriteDescriptorSet{.dstSet = descriptorSet,
+                            .dstBinding = 0,
+                            .dstArrayElement = 0,
+                            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                            .bufferInfos = {VkDescriptorBufferInfo{
+                                .buffer = *unifBuffer,
+                                .offset = 0,
+                                .range = sizeof(UniformValues)}}}});
+
+    frames.push_back(Frame{.commandBuffer = commandBuffer,
+                           .inFlight = Fence(device, true),
+                           .imageAvailable = Semaphore(device),
+                           .renderFinished = Semaphore(device),
+                           .unifBuffer = unifBuffer,
+                           .unifMemory = std::move(unifMemory),
+                           .unifMemoryPtr = unifMemoryPtr,
+                           .descriptorSet = descriptorSet});
   }
+
+  glm::vec3 cameraPos = {2.0f, 2.0f, 2.0f};
+  glm::vec<3, int> velocity = {0, 0, 0};
+
+  window.onKey = [&](int key, int scanCode, int action, int mods) -> void {
+    if (key == GLFW_KEY_ESCAPE || key == GLFW_KEY_Q)
+      glfwSetWindowShouldClose(window, GLFW_TRUE);
+
+    if (action == GLFW_PRESS || action == GLFW_RELEASE) {
+      int mag = action == GLFW_PRESS ? 1 : -1;
+      if (key == GLFW_KEY_SPACE)
+        velocity.y -= mag;
+      else if (key == GLFW_KEY_LEFT_SHIFT)
+        velocity.y += mag;
+      else if (key == GLFW_KEY_W)
+        velocity.z += mag;
+      else if (key == GLFW_KEY_S)
+        velocity.z -= mag;
+      else if (key == GLFW_KEY_D)
+        velocity.x -= mag;
+      else if (key == GLFW_KEY_A)
+        velocity.x += mag;
+    }
+  };
+
+  glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
+  glm::vec<2, double> cursorPos;
+  window.onCursorPos = [&](double xpos, double ypos) -> void {
+    cursorPos = {xpos, ypos};
+  };
+
+  std::optional<glm::vec<2, double>> prevCursorPos;
+  glm::quat rotQuat{1.0f, 0.0f, 0.0f, 0.0f};
+  float sensitivity = 1e-2f;
+
+  using time_point_t = decltype(std::chrono::high_resolution_clock::now());
+  auto startTime = std::chrono::high_resolution_clock::now();
+  std::optional<time_point_t> prevTime;
+
+  float fov = 45.0f, fovSensitivity = 1.0f;
+  window.onScroll = [&](double xoffset, double yoffset) -> void {
+    fov += yoffset * fovSensitivity;
+    fov = std::clamp(fov, 15.0f, 120.0f);
+  };
 
   int curFrameIndex = 0;
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();
 
     auto &frame = frames[curFrameIndex];
+
+    if (prevCursorPos.has_value()) {
+      auto diff = cursorPos - prevCursorPos.value();
+      if (diff.x != 0 || diff.y != 0) {
+        auto up = rotQuat * glm::vec3{0.0f, 1.0f, 0.0f};
+        auto right = rotQuat * glm::vec3{1.0f, 0.0f, 0.0f};
+        rotQuat = glm::angleAxis(-(float)diff.y * sensitivity, right) *
+                  glm::angleAxis(-(float)diff.x * sensitivity, up) * rotQuat;
+        rotQuat = glm::normalize(rotQuat);
+      }
+    }
+
+    auto curTime = std::chrono::high_resolution_clock::now();
+    if (prevTime.has_value()) {
+      using namespace std::chrono;
+      auto timeDiff = curTime - prevTime.value();
+      auto elapsed = duration_cast<nanoseconds>(timeDiff).count() * 1.0e-9f;
+
+      cameraPos += rotQuat * (glm::vec3(velocity) * elapsed);
+    }
+
+    prevTime = curTime;
+    prevCursorPos = cursorPos;
+
+    float elapsed;
+    {
+      using namespace std::chrono;
+      auto timeDiff = curTime - startTime;
+      elapsed = duration_cast<nanoseconds>(timeDiff).count() * 1.0e-9f;
+    }
+
+    auto model = glm::rotate(glm::mat4(1.0f), elapsed * glm::radians(90.0f),
+                             glm::vec3(0.0f, 0.0f, 1.0f));
+
+    // glm::vec3 lookDir = {cos(yaw) * cos(pitch), sin(pitch),
+    //                      sin(yaw) * cos(pitch)};
+    // auto view = glm::lookAt(cameraPos, cameraPos + lookDir, up);
+    auto up = rotQuat * glm::vec3{0.0f, 1.0f, 0.0f},
+         lookDir = rotQuat * glm::vec3{0.0f, 0.0f, 1.0f};
+    auto view = glm::lookAt(cameraPos, cameraPos + lookDir, up);
+
+    auto proj = glm::perspective(glm::radians(fov),
+                                 swapExtent.width / (float)swapExtent.height,
+                                 0.1f, 10.0f);
+
+    unif.mvp = proj * view * model;
+    std::memcpy(frame.unifMemoryPtr.get(), &unif, sizeof(UniformValues));
 
     frame.inFlight.wait();
 
@@ -667,6 +829,10 @@ int main() {
     {
       auto cmdBufRecording = std::make_shared<CommandBufferRecording>(
           frame.commandBuffer, CommandBufferBeginInfo{.flags = {}});
+
+      cmdBufRecording->bindDescriptorSets(VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                          *pipelineLayout, 0,
+                                          {frame.descriptorSet});
 
       {
         auto cmdBufRenderPass = CommandBufferRenderPass(
