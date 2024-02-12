@@ -45,9 +45,14 @@ void DeviceMemory::destroy() {
   deviceMemory = VK_NULL_HANDLE;
 }
 
-std::shared_ptr<void>
-DeviceMemory::map(std::shared_ptr<DeviceMemory> deviceMemory,
-                  VkDeviceSize offset, VkDeviceSize size) {
+void DeviceMemory::unmapMemory() {
+  device->vkUnmapMemory(*device, deviceMemory);
+}
+
+DeviceMemoryMap::DeviceMemoryMap(std::shared_ptr<DeviceMemory> deviceMemory,
+                                 VkDeviceSize offset, VkDeviceSize size) {
+  this->deviceMemory = deviceMemory;
+
   if (!deviceMemory->memoryMap.expired())
     throw std::runtime_error("Device memory already mapped.");
 
@@ -58,16 +63,14 @@ DeviceMemory::map(std::shared_ptr<DeviceMemory> deviceMemory,
                                              deviceMemory->deviceMemory, offset,
                                              size, {}, &ptr));
 
-  auto memoryMap =
-      std::shared_ptr<void>(ptr, [deviceMemory](void *ptr) -> void {
-        deviceMemory->unmapMemory();
-      });
-
-  deviceMemory->memoryMap = memoryMap;
-
-  return memoryMap;
+  this->ptr = std::shared_ptr<void>(ptr, [](void *ptr) -> void {});
 }
 
-void DeviceMemory::unmapMemory() {
-  device->vkUnmapMemory(*device, deviceMemory);
+DeviceMemoryMap::~DeviceMemoryMap() {
+  if (ptr.use_count() == 1)
+    deviceMemory->unmapMemory();
+}
+
+void *DeviceMemoryMap::get() const {
+  return ptr.get();
 }

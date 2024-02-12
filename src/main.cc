@@ -584,7 +584,7 @@ int main() {
     VK_CHECK(
         device->vkBindBufferMemory(*device, *stagingBuffer, *stagingMemory, 0));
 
-    auto stagingMemoryMap = DeviceMemory::map(stagingMemory);
+    auto stagingMemoryMap = DeviceMemoryMap(stagingMemory);
     std::memcpy(stagingMemoryMap.get(), vertices.data(), verticesSize);
 
     auto commandBuffer = std::make_shared<CommandBuffer>(
@@ -634,7 +634,7 @@ int main() {
     VK_CHECK(
         device->vkBindBufferMemory(*device, *stagingBuffer, *stagingMemory, 0));
 
-    auto stagingMemoryMap = DeviceMemory::map(stagingMemory);
+    auto stagingMemoryMap = DeviceMemoryMap(stagingMemory);
     std::memcpy(stagingMemoryMap.get(), indices.data(), indicesSize);
 
     auto commandBuffer = std::make_shared<CommandBuffer>(
@@ -750,7 +750,7 @@ int main() {
     Fence inFlight;
     Semaphore imageAvailable, renderFinished;
     std::shared_ptr<Buffer> unifBuffer;
-    std::shared_ptr<void> unifMemoryPtr;
+    DeviceMemoryMap unifMemoryPtr;
     VkDescriptorSet descriptorSet;
   };
 
@@ -783,7 +783,7 @@ int main() {
                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)});
     VK_CHECK(device->vkBindBufferMemory(*device, *unifBuffer, *unifMemory, 0));
 
-    auto unifMemoryPtr = DeviceMemory::map(unifMemory);
+    auto unifMemoryPtr = DeviceMemoryMap(unifMemory);
 
     auto descriptorSet = unifDescriptorSets[frameIndex];
 

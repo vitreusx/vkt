@@ -8,6 +8,8 @@ struct MemoryAllocateInfo {
   uint32_t memoryTypeIndex;
 };
 
+class DeviceMemoryMap;
+
 class DeviceMemory {
 public:
   DeviceMemory(std::shared_ptr<Device> device,
@@ -23,11 +25,9 @@ public:
 
   operator VkDeviceMemory();
 
-  static std::shared_ptr<void>
-  map(std::shared_ptr<DeviceMemory> deviceMemory, VkDeviceSize offset = 0,
-      VkDeviceSize size = std::numeric_limits<VkDeviceSize>::max());
-
 private:
+  friend class DeviceMemoryMap;
+
   std::shared_ptr<Device> device = {};
   VkDeviceMemory deviceMemory = VK_NULL_HANDLE;
   VkDeviceSize allocationSize = 0;
@@ -36,4 +36,21 @@ private:
 
   std::weak_ptr<void> memoryMap;
   void unmapMemory();
+};
+
+class DeviceMemoryMap {
+public:
+  DeviceMemoryMap() = default;
+
+  DeviceMemoryMap(std::shared_ptr<DeviceMemory> deviceMemory,
+                  VkDeviceSize offset = 0,
+                  VkDeviceSize size = std::numeric_limits<VkDeviceSize>::max());
+
+  ~DeviceMemoryMap();
+
+  void *get() const;
+
+private:
+  std::shared_ptr<DeviceMemory> deviceMemory = {};
+  std::shared_ptr<void> ptr = nullptr;
 };
