@@ -93,10 +93,7 @@ void Instance::loadFunctions() {
 #define LOAD(name)                                                             \
   this->name =                                                                 \
       reinterpret_cast<PFN_##name>(vkGetInstanceProcAddr(instance, #name))
-  LOAD(vkEnumeratePhysicalDevices);
-  LOAD(vkCreateDebugUtilsMessengerEXT);
-  LOAD(vkDestroyDebugUtilsMessengerEXT);
-  LOAD(vkDestroySurfaceKHR);
+  INSTANCE_DEFS(LOAD);
 #undef LOAD
 }
 

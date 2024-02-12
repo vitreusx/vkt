@@ -51,49 +51,6 @@ Device::operator VkDevice() {
 
 void Device::loadFunctions() {
 #define LOAD(name) this->name = (PFN_##name)vkGetDeviceProcAddr(device, #name)
-  LOAD(vkGetDeviceQueue);
-  LOAD(vkCreateSwapchainKHR);
-  LOAD(vkDestroySwapchainKHR);
-  LOAD(vkGetSwapchainImagesKHR);
-  LOAD(vkCreateImageView);
-  LOAD(vkDestroyImageView);
-  LOAD(vkCreateShaderModule);
-  LOAD(vkDestroyShaderModule);
-  LOAD(vkCreatePipelineLayout);
-  LOAD(vkDestroyPipelineLayout);
-  LOAD(vkCreateGraphicsPipelines);
-  LOAD(vkDestroyPipeline);
-  LOAD(vkCreateRenderPass);
-  LOAD(vkDestroyRenderPass);
-  LOAD(vkCreateFramebuffer);
-  LOAD(vkDestroyFramebuffer);
-  LOAD(vkCreateCommandPool);
-  LOAD(vkDestroyCommandPool);
-  LOAD(vkAllocateCommandBuffers);
-  LOAD(vkFreeCommandBuffers);
-  LOAD(vkCreateSemaphore);
-  LOAD(vkDestroySemaphore);
-  LOAD(vkCreateFence);
-  LOAD(vkDestroyFence);
-  LOAD(vkWaitForFences);
-  LOAD(vkResetFences);
-  LOAD(vkAcquireNextImageKHR);
-  LOAD(vkQueueSubmit);
-  LOAD(vkQueuePresentKHR);
-  LOAD(vkCreateBuffer);
-  LOAD(vkDestroyBuffer);
-  LOAD(vkDeviceWaitIdle);
-  LOAD(vkAllocateMemory);
-  LOAD(vkFreeMemory);
-  LOAD(vkBindBufferMemory);
-  LOAD(vkMapMemory);
-  LOAD(vkUnmapMemory);
-  LOAD(vkQueueWaitIdle);
-  LOAD(vkCreateDescriptorSetLayout);
-  LOAD(vkDestroyDescriptorSetLayout);
-  LOAD(vkCreateDescriptorPool);
-  LOAD(vkDestroyDescriptorPool);
-  LOAD(vkAllocateDescriptorSets);
-  LOAD(vkUpdateDescriptorSets);
+  DEVICE_DEFS(LOAD);
 #undef LOAD
 }

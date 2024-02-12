@@ -57,6 +57,18 @@ struct MultisampleStateCreateInfo {
   VkBool32 alphaToOneEnable;
 };
 
+struct DepthStencilStateCreateInfo {
+  VkBool32 depthTestEnable;
+  VkBool32 depthWriteEnable;
+  VkCompareOp depthCompareOp;
+  VkBool32 depthBoundsTestEnable;
+  VkBool32 stencilTestEnable;
+  VkStencilOpState front;
+  VkStencilOpState back;
+  float minDepthBounds;
+  float maxDepthBounds;
+};
+
 struct ColorBlendStateCreateInfo {
   VkBool32 logicOpEnable;
   VkLogicOp logicOp;
@@ -71,6 +83,7 @@ struct GraphicsPipelineCreateInfo {
   ViewportStateCreateInfo viewportState;
   RasterizationStateCreateInfo rasterizationState;
   MultisampleStateCreateInfo multisampleState;
+  DepthStencilStateCreateInfo depthStencilState;
   ColorBlendStateCreateInfo colorBlendState;
   std::vector<VkDynamicState> dynamicStates;
   std::shared_ptr<PipelineLayout> pipelineLayout;

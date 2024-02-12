@@ -33,5 +33,7 @@ private:
   VkDeviceSize allocationSize = 0;
 
   void destroy();
+
+  std::weak_ptr<void> memoryMap;
   void unmapMemory();
 };

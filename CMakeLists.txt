@@ -1,12 +1,17 @@
 cmake_minimum_required(VERSION 3.18)
 project(vkt LANGUAGES C CXX)
 
+add_subdirectory(ext/tinyobjloader)
+add_subdirectory(ext/spdlog)
+add_subdirectory(ext/glm)
+add_subdirectory(ext/stb)
+
 set(TARGET vkt)
 add_library(${TARGET})
 set_target_properties(${TARGET} PROPERTIES LINKER_LANGUAGE CXX)
 
 file(GLOB SourceFiles CONFIGURE_DEPENDS
-    src/${TARGET}/*.cc include/${TARGET}/*.h)
+    src/${TARGET}/**.cc include/${TARGET}/**.h)
 target_sources(${TARGET} PRIVATE ${SourceFiles})
 
 target_include_directories(${TARGET}
@@ -25,16 +30,23 @@ target_link_libraries(${TARGET} PUBLIC glfw)
 find_package(Vulkan COMPONENTS glslc REQUIRED)
 target_link_libraries(${TARGET} PUBLIC Vulkan::Vulkan)
 
-set(TARGET main)
-add_executable(${TARGET} src/main.cc)
+set(TARGET vkx)
+add_library(${TARGET})
+set_target_properties(${TARGET} PROPERTIES LINKER_LANGUAGE CXX)
 
-target_link_libraries(${TARGET} PRIVATE vkt)
+file(GLOB SourceFiles CONFIGURE_DEPENDS
+    src/${TARGET}/**.cc include/${TARGET}/**.h)
+target_sources(${TARGET} PRIVATE ${SourceFiles})
 
-add_subdirectory(ext/spdlog)
-target_link_libraries(${TARGET} PRIVATE spdlog::spdlog)
+target_include_directories(${TARGET}
+    PUBLIC include)
 
-add_subdirectory(ext/glm)
-target_link_libraries(${TARGET} PRIVATE glm::glm)
+target_compile_options(${TARGET}
+    PRIVATE
+    $<$<CONFIG:Debug>:-g>
+    $<$<CONFIG:Release>:-O2>)
+
+target_link_libraries(${TARGET} PUBLIC vkt tinyobjloader spdlog::spdlog)
 
 function(add_spirv_shader INPUT_FILE OUTPUT_FILE)
     cmake_path(GET OUTPUT_FILE PARENT_PATH OUTPUT_PARENT)
@@ -65,10 +77,25 @@ foreach(ShaderFile IN LISTS ShaderFiles)
 endforeach()
 
 add_custom_target(shaders DEPENDS "${CompiledShaders}")
-add_dependencies(${TARGET} shaders)
 
-add_custom_command(
-    TARGET ${TARGET}
-    POST_BUILD
-    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CompiledShadersDir}" "$<TARGET_FILE_DIR:${TARGET}>/shaders"
-    COMMENT "Copying shaders next to executable")
+foreach(TARGET main stuff)
+    add_executable(${TARGET} src/${TARGET}.cc)
+
+    target_link_libraries(${TARGET} PRIVATE
+        vkt vkx spdlog::spdlog glm::glm tinyobjloader stb)
+
+    add_dependencies(${TARGET} shaders)
+
+    add_custom_command(
+        TARGET ${TARGET}
+        POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CompiledShadersDir}" "$<TARGET_FILE_DIR:${TARGET}>/shaders"
+        COMMENT "Copying shaders next to executable")
+
+    add_custom_command(
+        TARGET ${TARGET}
+        POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E create_symlink "${CMAKE_CURRENT_LIST_DIR}/assets" "$<TARGET_FILE_DIR:${TARGET}>/assets"
+        COMMENT "Creating symlink to the assets."
+    )
+endforeach()

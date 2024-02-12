@@ -28,23 +28,26 @@ public:
 
   void reset(VkCommandBufferResetFlags flags = {});
 
+#define CMD_BUF_DEFS(MACRO)                                                    \
+  MACRO(vkBeginCommandBuffer);                                                 \
+  MACRO(vkEndCommandBuffer);                                                   \
+  MACRO(vkCmdBeginRenderPass);                                                 \
+  MACRO(vkCmdEndRenderPass);                                                   \
+  MACRO(vkCmdClearColorImage);                                                 \
+  MACRO(vkCmdBindPipeline);                                                    \
+  MACRO(vkCmdSetViewport);                                                     \
+  MACRO(vkCmdSetScissor);                                                      \
+  MACRO(vkCmdDraw);                                                            \
+  MACRO(vkResetCommandBuffer);                                                 \
+  MACRO(vkCmdPipelineBarrier);                                                 \
+  MACRO(vkCmdBindVertexBuffers);                                               \
+  MACRO(vkCmdCopyBuffer);                                                      \
+  MACRO(vkCmdDrawIndexed);                                                     \
+  MACRO(vkCmdBindIndexBuffer);                                                 \
+  MACRO(vkCmdBindDescriptorSets)
+
 #define MEMBER(name) PFN_##name name
-  MEMBER(vkBeginCommandBuffer);
-  MEMBER(vkEndCommandBuffer);
-  MEMBER(vkCmdBeginRenderPass);
-  MEMBER(vkCmdEndRenderPass);
-  MEMBER(vkCmdClearColorImage);
-  MEMBER(vkCmdBindPipeline);
-  MEMBER(vkCmdSetViewport);
-  MEMBER(vkCmdSetScissor);
-  MEMBER(vkCmdDraw);
-  MEMBER(vkResetCommandBuffer);
-  MEMBER(vkCmdPipelineBarrier);
-  MEMBER(vkCmdBindVertexBuffers);
-  MEMBER(vkCmdCopyBuffer);
-  MEMBER(vkCmdDrawIndexed);
-  MEMBER(vkCmdBindIndexBuffer);
-  MEMBER(vkCmdBindDescriptorSets);
+  CMD_BUF_DEFS(MEMBER);
 #undef MEMBER
 
 private:

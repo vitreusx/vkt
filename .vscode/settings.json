@@ -75,6 +75,15 @@
         "future": "cpp",
         "expected": "cpp",
         "unordered_set": "cpp",
-        "*.inc": "cpp"
+        "*.inc": "cpp",
+        "csignal": "cpp",
+        "strstream": "cpp",
+        "cfenv": "cpp",
+        "complex": "cpp",
+        "source_location": "cpp",
+        "ranges": "cpp",
+        "shared_mutex": "cpp",
+        "typeindex": "cpp",
+        "filesystem": "cpp"
     }
 }

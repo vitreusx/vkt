@@ -45,51 +45,58 @@ public:
   operator VkDevice();
 
 public:
+#define DEVICE_DEFS(MACRO)                                                     \
+  MACRO(vkGetDeviceQueue);                                                     \
+  MACRO(vkCreateSwapchainKHR);                                                 \
+  MACRO(vkDestroySwapchainKHR);                                                \
+  MACRO(vkGetSwapchainImagesKHR);                                              \
+  MACRO(vkCreateImageView);                                                    \
+  MACRO(vkDestroyImageView);                                                   \
+  MACRO(vkCreateShaderModule);                                                 \
+  MACRO(vkDestroyShaderModule);                                                \
+  MACRO(vkCreatePipelineLayout);                                               \
+  MACRO(vkDestroyPipelineLayout);                                              \
+  MACRO(vkCreateGraphicsPipelines);                                            \
+  MACRO(vkDestroyPipeline);                                                    \
+  MACRO(vkCreateRenderPass);                                                   \
+  MACRO(vkDestroyRenderPass);                                                  \
+  MACRO(vkCreateFramebuffer);                                                  \
+  MACRO(vkDestroyFramebuffer);                                                 \
+  MACRO(vkCreateCommandPool);                                                  \
+  MACRO(vkDestroyCommandPool);                                                 \
+  MACRO(vkAllocateCommandBuffers);                                             \
+  MACRO(vkFreeCommandBuffers);                                                 \
+  MACRO(vkCreateSemaphore);                                                    \
+  MACRO(vkDestroySemaphore);                                                   \
+  MACRO(vkCreateFence);                                                        \
+  MACRO(vkDestroyFence);                                                       \
+  MACRO(vkWaitForFences);                                                      \
+  MACRO(vkResetFences);                                                        \
+  MACRO(vkAcquireNextImageKHR);                                                \
+  MACRO(vkQueueSubmit);                                                        \
+  MACRO(vkQueuePresentKHR);                                                    \
+  MACRO(vkCreateBuffer);                                                       \
+  MACRO(vkDestroyBuffer);                                                      \
+  MACRO(vkDeviceWaitIdle);                                                     \
+  MACRO(vkAllocateMemory);                                                     \
+  MACRO(vkFreeMemory);                                                         \
+  MACRO(vkBindBufferMemory);                                                   \
+  MACRO(vkMapMemory);                                                          \
+  MACRO(vkUnmapMemory);                                                        \
+  MACRO(vkQueueWaitIdle);                                                      \
+  MACRO(vkCreateDescriptorSetLayout);                                          \
+  MACRO(vkDestroyDescriptorSetLayout);                                         \
+  MACRO(vkCreateDescriptorPool);                                               \
+  MACRO(vkDestroyDescriptorPool);                                              \
+  MACRO(vkAllocateDescriptorSets);                                             \
+  MACRO(vkUpdateDescriptorSets);                                               \
+  MACRO(vkCreateImage);                                                        \
+  MACRO(vkDestroyImage);                                                       \
+  MACRO(vkGetImageMemoryRequirements);                                         \
+  MACRO(vkBindImageMemory)
+
 #define MEMBER(name) PFN_##name name
-  MEMBER(vkGetDeviceQueue);
-  MEMBER(vkCreateSwapchainKHR);
-  MEMBER(vkDestroySwapchainKHR);
-  MEMBER(vkGetSwapchainImagesKHR);
-  MEMBER(vkCreateImageView);
-  MEMBER(vkDestroyImageView);
-  MEMBER(vkCreateShaderModule);
-  MEMBER(vkDestroyShaderModule);
-  MEMBER(vkCreatePipelineLayout);
-  MEMBER(vkDestroyPipelineLayout);
-  MEMBER(vkCreateGraphicsPipelines);
-  MEMBER(vkDestroyPipeline);
-  MEMBER(vkCreateRenderPass);
-  MEMBER(vkDestroyRenderPass);
-  MEMBER(vkCreateFramebuffer);
-  MEMBER(vkDestroyFramebuffer);
-  MEMBER(vkCreateCommandPool);
-  MEMBER(vkDestroyCommandPool);
-  MEMBER(vkAllocateCommandBuffers);
-  MEMBER(vkFreeCommandBuffers);
-  MEMBER(vkCreateSemaphore);
-  MEMBER(vkDestroySemaphore);
-  MEMBER(vkCreateFence);
-  MEMBER(vkDestroyFence);
-  MEMBER(vkWaitForFences);
-  MEMBER(vkResetFences);
-  MEMBER(vkAcquireNextImageKHR);
-  MEMBER(vkQueueSubmit);
-  MEMBER(vkQueuePresentKHR);
-  MEMBER(vkCreateBuffer);
-  MEMBER(vkDestroyBuffer);
-  MEMBER(vkDeviceWaitIdle);
-  MEMBER(vkAllocateMemory);
-  MEMBER(vkFreeMemory);
-  MEMBER(vkBindBufferMemory);
-  MEMBER(vkMapMemory);
-  MEMBER(vkUnmapMemory);
-  MEMBER(vkQueueWaitIdle);
-  MEMBER(vkCreateDescriptorSetLayout);
-  MEMBER(vkDestroyDescriptorSetLayout);
-  MEMBER(vkCreateDescriptorPool);
-  MEMBER(vkDestroyDescriptorPool);
-  MEMBER(vkAllocateDescriptorSets);
-  MEMBER(vkUpdateDescriptorSets);
+  DEVICE_DEFS(MEMBER);
 #undef MEMBER
 
   void loadFunctions();

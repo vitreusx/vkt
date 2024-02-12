@@ -120,6 +120,21 @@ GraphicsPipeline::GraphicsPipeline(
       .alphaToCoverageEnable = multisampleState.alphaToCoverageEnable,
       .alphaToOneEnable = multisampleState.alphaToOneEnable};
 
+  auto const &depthStencilState = createInfo.depthStencilState;
+  auto vk_depthStencilState = VkPipelineDepthStencilStateCreateInfo{
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = {},
+      .depthTestEnable = depthStencilState.depthTestEnable,
+      .depthWriteEnable = depthStencilState.depthWriteEnable,
+      .depthCompareOp = depthStencilState.depthCompareOp,
+      .depthBoundsTestEnable = depthStencilState.depthBoundsTestEnable,
+      .stencilTestEnable = depthStencilState.stencilTestEnable,
+      .front = depthStencilState.front,
+      .back = depthStencilState.back,
+      .minDepthBounds = depthStencilState.minDepthBounds,
+      .maxDepthBounds = depthStencilState.maxDepthBounds};
+
   auto const &colorBlendState = createInfo.colorBlendState;
   auto vk_colorBlendState = VkPipelineColorBlendStateCreateInfo{
       .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
@@ -153,7 +168,7 @@ GraphicsPipeline::GraphicsPipeline(
       .pViewportState = &vk_viewportState,
       .pRasterizationState = &vk_rasterizationState,
       .pMultisampleState = &vk_multisampleState,
-      .pDepthStencilState = VK_NULL_HANDLE,
+      .pDepthStencilState = &vk_depthStencilState,
       .pColorBlendState = &vk_colorBlendState,
       .pDynamicState = &vk_dynamicState,
       .layout = *createInfo.pipelineLayout,

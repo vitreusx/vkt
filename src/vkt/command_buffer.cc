@@ -35,22 +35,7 @@ void CommandBuffer::reset(VkCommandBufferResetFlags flags) {
 
 void CommandBuffer::loadFunctions() {
 #define LOAD(name) this->name = (PFN_##name)vkGetDeviceProcAddr(*device, #name)
-  LOAD(vkBeginCommandBuffer);
-  LOAD(vkEndCommandBuffer);
-  LOAD(vkCmdBeginRenderPass);
-  LOAD(vkCmdEndRenderPass);
-  LOAD(vkCmdClearColorImage);
-  LOAD(vkCmdBindPipeline);
-  LOAD(vkCmdSetViewport);
-  LOAD(vkCmdSetScissor);
-  LOAD(vkCmdDraw);
-  LOAD(vkResetCommandBuffer);
-  LOAD(vkCmdPipelineBarrier);
-  LOAD(vkCmdBindVertexBuffers);
-  LOAD(vkCmdCopyBuffer);
-  LOAD(vkCmdDrawIndexed);
-  LOAD(vkCmdBindIndexBuffer);
-  LOAD(vkCmdBindDescriptorSets);
+  CMD_BUF_DEFS(LOAD);
 #undef LOAD
 }
 

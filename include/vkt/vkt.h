@@ -25,3 +25,4 @@
 #include "utils.h"
 #include "descriptor_set_layout.h"
 #include "descriptor_pool.h"
+#include "image.h"

@@ -11,9 +11,10 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <vkt/vkt.h>
+#include <vkx/obj_model.h>
 
 struct Vertex {
-  glm::vec2 pos;
+  glm::vec3 pos;
   glm::vec3 color;
 
   static VkVertexInputBindingDescription binding(uint32_t bindingIndex = 0) {
@@ -27,7 +28,7 @@ struct Vertex {
     return {
         VkVertexInputAttributeDescription{.location = 0,
                                           .binding = bindingIndex,
-                                          .format = VK_FORMAT_R32G32_SFLOAT,
+                                          .format = VK_FORMAT_R32G32B32_SFLOAT,
                                           .offset = offsetof(Vertex, pos)},
         VkVertexInputAttributeDescription{.location = 1,
                                           .binding = bindingIndex,
@@ -235,6 +236,20 @@ int main() {
        presentQueue = Queue(device, deviceInfo.presentQueueIndex, 0),
        transferQueue = Queue(device, deviceInfo.transferQueueIndex, 0);
 
+  auto findMemoryType = [&](uint32_t memoryTypeMask,
+                            VkMemoryPropertyFlags propertyFlags) {
+    for (uint32_t index = 0; index < physicalDevice.memoryProps.memoryTypeCount;
+         ++index) {
+      auto const &memoryType = physicalDevice.memoryProps.memoryTypes[index];
+      if (memoryTypeMask & ((uint32_t)1 << index) == 0)
+        continue;
+      if ((memoryType.propertyFlags & propertyFlags) != propertyFlags)
+        continue;
+      return index;
+    }
+    throw std::runtime_error("Failed to find suitable memory type.");
+  };
+
   bool framebufferResized = false;
   window.onFramebufferSize = [&](int width, int height) -> void {
     framebufferResized = true;
@@ -381,25 +396,101 @@ int main() {
 
   createSwapchain();
 
+  VkFormat depthFormat = {};
+  auto requiredFeature = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+  for (auto format :
+       {VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT}) {
+    VkFormatProperties formatProps;
+    loader->vkGetPhysicalDeviceFormatProperties(physicalDevice, format,
+                                                &formatProps);
+
+    if (formatProps.optimalTilingFeatures &
+        requiredFeature == requiredFeature) {
+      depthFormat = format;
+      break;
+    }
+  }
+
+  auto depthStencilImage = Image(
+      device,
+      ImageCreateInfo{.flags = {},
+                      .imageType = VK_IMAGE_TYPE_2D,
+                      .format = depthFormat,
+                      .extent = VkExtent3D{.width = swapExtent.width,
+                                           .height = swapExtent.height,
+                                           .depth = 1},
+                      .mipLevels = 1,
+                      .arrayLayers = 1,
+                      .samples = VK_SAMPLE_COUNT_1_BIT,
+                      .tiling = VK_IMAGE_TILING_OPTIMAL,
+                      .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                      .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+                      .queueFamilyIndices = {deviceInfo.graphicsQueueIndex},
+                      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED});
+
+  VkMemoryRequirements depthStencilMemReqs;
+  device->vkGetImageMemoryRequirements(*device, depthStencilImage,
+                                       &depthStencilMemReqs);
+
+  auto depthStencilMemory = DeviceMemory(
+      device, MemoryAllocateInfo{.size = depthStencilMemReqs.size,
+                                 .memoryTypeIndex = findMemoryType(
+                                     depthStencilMemReqs.memoryTypeBits,
+                                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)});
+
+  device->vkBindImageMemory(*device, depthStencilImage, depthStencilMemory, 0);
+
+  auto depthStencilView = std::make_shared<ImageView>(
+      device,
+      ImageViewCreateInfo{
+          .image = depthStencilImage,
+          .viewType = VK_IMAGE_VIEW_TYPE_2D,
+          .format = depthFormat,
+          .components = VkComponentMapping{.r = VK_COMPONENT_SWIZZLE_IDENTITY,
+                                           .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+                                           .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+                                           .a = VK_COMPONENT_SWIZZLE_IDENTITY},
+          .subresourceRange =
+              VkImageSubresourceRange{.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT |
+                                                    VK_IMAGE_ASPECT_STENCIL_BIT,
+                                      .baseMipLevel = 0,
+                                      .levelCount = 1,
+                                      .baseArrayLayer = 0,
+                                      .layerCount = 1}});
+
   auto renderPass = std::make_shared<RenderPass>(
       device,
       RenderPassCreateInfo{
-          .attachments = {VkAttachmentDescription{
-              .flags = {},
-              .format = swapchainInfo.imageFormat,
-              .samples = VK_SAMPLE_COUNT_1_BIT,
-              .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-              .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-              .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-              .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-              .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-              .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR}},
+          .attachments =
+              {VkAttachmentDescription{
+                   .flags = {},
+                   .format = swapchainInfo.imageFormat,
+                   .samples = VK_SAMPLE_COUNT_1_BIT,
+                   .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                   .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+                   .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                   .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                   .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                   .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR},
+               VkAttachmentDescription{
+                   .flags = {},
+                   .format = depthFormat,
+                   .samples = VK_SAMPLE_COUNT_1_BIT,
+                   .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                   .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                   .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                   .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                   .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                   .finalLayout =
+                       VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}},
           .subpasses = {SubpassDescription{
               .flags = {},
               .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
               .depthStencil =
-                  VkAttachmentReference{.attachment = VK_ATTACHMENT_UNUSED,
-                                        .layout = {}},
+                  VkAttachmentReference{
+                      .attachment = 1,
+                      .layout =
+                          VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL},
               .input = {},
               .color = {VkAttachmentReference{
                   .attachment = 0,
@@ -409,34 +500,35 @@ int main() {
           .dependencies = {VkSubpassDependency{
               .srcSubpass = VK_SUBPASS_EXTERNAL,
               .dstSubpass = 0,
-              .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-              .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+              .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                              VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+              .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                              VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
               .srcAccessMask = 0,
-              .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+              .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                               VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
               .dependencyFlags = {}}}});
 
-  auto vertices = std::vector<Vertex>{{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-                                      {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-                                      {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-                                      {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}};
+  auto model = ObjModel("assets/sibenik/sibenik.obj");
+
+  auto numVertices = model.attrib.vertices.size() / 3;
+  std::vector<Vertex> vertices(numVertices);
+  for (int idx = 0; idx < numVertices; ++idx) {
+    vertices[idx] = Vertex{.pos = {model.attrib.vertices[3 * idx],
+                                   model.attrib.vertices[3 * idx + 1],
+                                   model.attrib.vertices[3 * idx + 2]},
+                           .color = {model.attrib.colors[3 * idx],
+                                     model.attrib.colors[3 * idx + 1],
+                                     model.attrib.colors[3 * idx + 2]}};
+  }
+
+  auto numIndices = model.shapes[0].mesh.indices.size();
+  std::vector<uint32_t> indices(numIndices);
+  for (int idx = 0; idx < numIndices; ++idx)
+    indices[idx] = model.shapes[0].mesh.indices[idx].vertex_index;
+
   auto verticesSize = sizeof(Vertex) * vertices.size();
-
-  auto indices = std::vector<uint32_t>{0, 1, 2, 2, 3, 0};
   auto indicesSize = sizeof(uint32_t) * indices.size();
-
-  auto findMemoryType = [&](uint32_t memoryTypeMask,
-                            VkMemoryPropertyFlags propertyFlags) {
-    for (uint32_t index = 0; index < physicalDevice.memoryProps.memoryTypeCount;
-         ++index) {
-      auto const &memoryType = physicalDevice.memoryProps.memoryTypes[index];
-      if (memoryTypeMask & ((uint32_t)1 << index) == 0)
-        continue;
-      if ((memoryType.propertyFlags & propertyFlags) != propertyFlags)
-        continue;
-      return index;
-    }
-    throw std::runtime_error("Failed to find suitable memory type.");
-  };
 
   auto vertexBuffer = std::make_shared<Buffer>(
       device, BufferCreateInfo{
@@ -594,7 +686,7 @@ int main() {
           .rasterizationState = {.depthClampEnable = VK_FALSE,
                                  .rasterizerDiscardEnable = VK_FALSE,
                                  .polygonMode = VK_POLYGON_MODE_FILL,
-                                 .cullMode = VK_CULL_MODE_NONE,
+                                 .cullMode = VK_CULL_MODE_BACK_BIT,
                                  .frontFace = VK_FRONT_FACE_CLOCKWISE,
                                  .depthBiasEnable = VK_FALSE,
                                  .depthBiasConstantFactor = 0.0f,
@@ -607,6 +699,11 @@ int main() {
                                .sampleMask = std::nullopt,
                                .alphaToCoverageEnable = VK_FALSE,
                                .alphaToOneEnable = VK_FALSE},
+          .depthStencilState = {.depthTestEnable = VK_TRUE,
+                                .depthWriteEnable = VK_TRUE,
+                                .depthCompareOp = VK_COMPARE_OP_LESS,
+                                .depthBoundsTestEnable = VK_FALSE,
+                                .stencilTestEnable = VK_FALSE},
           .colorBlendState =
               {.logicOpEnable = VK_FALSE,
                .logicOp = VK_LOGIC_OP_COPY,
@@ -632,10 +729,11 @@ int main() {
     framebuffers = {};
     for (auto const &imageView : imageViews) {
       auto framebuffer = std::make_shared<Framebuffer>(
-          device, FramebufferCreateInfo{.attachments = {imageView},
-                                        .renderPass = renderPass,
-                                        .extent = swapExtent,
-                                        .layers = 1});
+          device,
+          FramebufferCreateInfo{.attachments = {imageView, depthStencilView},
+                                .renderPass = renderPass,
+                                .extent = swapExtent,
+                                .layers = 1});
       framebuffers.push_back(framebuffer);
     }
   };
@@ -710,6 +808,8 @@ int main() {
 
   glm::vec3 cameraPos = {2.0f, 2.0f, 2.0f};
   glm::vec<3, int> velocity = {0, 0, 0};
+  float speed = 2.0f;
+  bool roll = false;
 
   window.onKey = [&](int key, int scanCode, int action, int mods) -> void {
     if (key == GLFW_KEY_ESCAPE || key == GLFW_KEY_Q)
@@ -720,7 +820,7 @@ int main() {
       if (key == GLFW_KEY_SPACE)
         velocity.y -= mag;
       else if (key == GLFW_KEY_LEFT_SHIFT)
-        velocity.y += mag;
+        speed *= mag > 0 ? 5.0f : 0.2f;
       else if (key == GLFW_KEY_W)
         velocity.z += mag;
       else if (key == GLFW_KEY_S)
@@ -729,6 +829,8 @@ int main() {
         velocity.x -= mag;
       else if (key == GLFW_KEY_A)
         velocity.x += mag;
+      else if (key == GLFW_KEY_E)
+        roll = mag > 0;
     }
   };
 
@@ -741,7 +843,7 @@ int main() {
 
   std::optional<glm::vec<2, double>> prevCursorPos;
   glm::quat rotQuat{1.0f, 0.0f, 0.0f, 0.0f};
-  float sensitivity = 1e-2f;
+  float mouseSensitivity = 1e-2f;
 
   using time_point_t = decltype(std::chrono::high_resolution_clock::now());
   auto startTime = std::chrono::high_resolution_clock::now();
@@ -749,7 +851,7 @@ int main() {
 
   float fov = 45.0f, fovSensitivity = 1.0f;
   window.onScroll = [&](double xoffset, double yoffset) -> void {
-    fov += yoffset * fovSensitivity;
+    fov -= yoffset * fovSensitivity;
     fov = std::clamp(fov, 15.0f, 120.0f);
   };
 
@@ -764,8 +866,12 @@ int main() {
       if (diff.x != 0 || diff.y != 0) {
         auto up = rotQuat * glm::vec3{0.0f, 1.0f, 0.0f};
         auto right = rotQuat * glm::vec3{1.0f, 0.0f, 0.0f};
-        rotQuat = glm::angleAxis(-(float)diff.y * sensitivity, right) *
-                  glm::angleAxis(-(float)diff.x * sensitivity, up) * rotQuat;
+        auto lookDir = rotQuat * glm::vec3{0.0f, 0.0f, 1.0f};
+
+        auto xdir = roll ? lookDir : up;
+        rotQuat = glm::angleAxis(-(float)diff.y * mouseSensitivity, right) *
+                  glm::angleAxis(-(float)diff.x * mouseSensitivity, xdir) *
+                  rotQuat;
         rotQuat = glm::normalize(rotQuat);
       }
     }
@@ -776,21 +882,24 @@ int main() {
       auto timeDiff = curTime - prevTime.value();
       auto elapsed = duration_cast<nanoseconds>(timeDiff).count() * 1.0e-9f;
 
-      cameraPos += rotQuat * (glm::vec3(velocity) * elapsed);
+      cameraPos += rotQuat * (glm::vec3(velocity) * speed * elapsed);
     }
 
     prevTime = curTime;
     prevCursorPos = cursorPos;
 
-    float elapsed;
-    {
-      using namespace std::chrono;
-      auto timeDiff = curTime - startTime;
-      elapsed = duration_cast<nanoseconds>(timeDiff).count() * 1.0e-9f;
-    }
+    // float elapsed;
+    // {
+    //   using namespace std::chrono;
+    //   auto timeDiff = curTime - startTime;
+    //   elapsed = duration_cast<nanoseconds>(timeDiff).count() * 1.0e-9f;
+    // }
 
-    auto model = glm::rotate(glm::mat4(1.0f), elapsed * glm::radians(90.0f),
-                             glm::vec3(0.0f, 0.0f, 1.0f));
+    // auto model = glm::rotate(glm::mat4(1.0f), elapsed *
+    // glm::radians(90.0f),
+    //                          glm::vec3(0.0f, 0.0f, 1.0f));
+
+    auto model = glm::identity<glm::mat4>();
 
     // glm::vec3 lookDir = {cos(yaw) * cos(pitch), sin(pitch),
     //                      sin(yaw) * cos(pitch)};
@@ -801,7 +910,7 @@ int main() {
 
     auto proj = glm::perspective(glm::radians(fov),
                                  swapExtent.width / (float)swapExtent.height,
-                                 0.1f, 10.0f);
+                                 0.01f, 1000.0f);
 
     unif.mvp = proj * view * model;
     std::memcpy(frame.unifMemoryPtr.get(), &unif, sizeof(UniformValues));
@@ -839,8 +948,10 @@ int main() {
                 .renderPass = renderPass,
                 .framebuffer = framebuffer,
                 .renderArea = VkRect2D{.offset = {0, 0}, .extent = swapExtent},
-                .clearValues = {VkClearValue{
-                    .color = {.float32 = {0.0f, 0.0f, 0.0f, 1.0f}}}},
+                .clearValues =
+                    {VkClearValue{
+                         .color = {.float32 = {0.0f, 0.0f, 0.0f, 1.0f}}},
+                     VkClearValue{.depthStencil = {1.0f, (uint32_t)0}}},
                 .subpassContents = VK_SUBPASS_CONTENTS_INLINE});
 
         cmdBufRenderPass.bindPipeline(pipeline);

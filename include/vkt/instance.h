@@ -53,11 +53,14 @@ public:
 
   std::vector<PhysicalDevice> listPhysicalDevices();
 
+#define INSTANCE_DEFS(MACRO)                                                   \
+  MACRO(vkEnumeratePhysicalDevices);                                           \
+  MACRO(vkCreateDebugUtilsMessengerEXT);                                       \
+  MACRO(vkDestroyDebugUtilsMessengerEXT);                                      \
+  MACRO(vkDestroySurfaceKHR)
+
 #define MEMBER(name) PFN_##name name
-  MEMBER(vkEnumeratePhysicalDevices);
-  MEMBER(vkCreateDebugUtilsMessengerEXT);
-  MEMBER(vkDestroyDebugUtilsMessengerEXT);
-  MEMBER(vkDestroySurfaceKHR);
+  INSTANCE_DEFS(MEMBER);
 #undef MEMBER
 
   std::shared_ptr<Loader> loader;
