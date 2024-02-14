@@ -1,5 +1,7 @@
 #pragma once
 #include <vkt/device.h>
+#include <vkt/device_memory.h>
+#include <set>
 
 struct ImageCreateInfo {
   VkImageCreateFlags flags;
@@ -12,7 +14,7 @@ struct ImageCreateInfo {
   VkImageTiling tiling;
   VkImageUsageFlags usage;
   VkSharingMode sharingMode;
-  std::vector<uint32_t> queueFamilyIndices;
+  std::set<uint32_t> queueFamilyIndices;
   VkImageLayout initialLayout;
 };
 

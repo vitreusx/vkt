@@ -1,5 +1,6 @@
 #pragma once
 #include <vkt/instance.h>
+#include <variant>
 
 struct DeviceQueueCreateInfo {
   VkDeviceQueueCreateFlags flags = {};
@@ -15,18 +16,27 @@ struct DeviceCreateInfo {
   VkPhysicalDeviceFeatures enabledFeatures = {};
 };
 
-struct QueueSubmitInfo {
-  std::vector<std::pair<VkSemaphore, VkPipelineStageFlags>>
-      waitSemaphoresAndStages;
-  std::vector<VkCommandBuffer> commandBuffers;
-  std::vector<VkSemaphore> signalSemaphores;
-  VkFence fence;
+struct WriteDescriptorSet {
+  VkDescriptorSet dstSet;
+  uint32_t dstBinding;
+  uint32_t dstArrayElement;
+  VkDescriptorType descriptorType;
+  std::vector<VkDescriptorImageInfo> imageInfos;
+  std::vector<VkDescriptorBufferInfo> bufferInfos;
+  std::vector<VkBufferView> texelBufferViews;
 };
 
-struct QueuePresentInfo {
-  std::vector<VkSemaphore> waitSemaphores;
-  std::vector<std::pair<VkSwapchainKHR, uint32_t>> swapchainsAndImageIndices;
+struct CopyDescriptorSet {
+  VkDescriptorSet srcSet;
+  uint32_t srcBinding;
+  uint32_t srcArrayElement;
+  VkDescriptorSet dstSet;
+  uint32_t dstBinding;
+  uint32_t dstArrayElement;
+  uint32_t descriptorCount;
 };
+
+using DescriptorOp = std::variant<WriteDescriptorSet, CopyDescriptorSet>;
 
 class Device {
 public:
@@ -43,6 +53,8 @@ public:
   ~Device();
 
   operator VkDevice();
+
+  void updateDescriptorSets(std::vector<DescriptorOp> operations);
 
 public:
 #define DEVICE_DEFS(MACRO)                                                     \
@@ -93,15 +105,17 @@ public:
   MACRO(vkCreateImage);                                                        \
   MACRO(vkDestroyImage);                                                       \
   MACRO(vkGetImageMemoryRequirements);                                         \
-  MACRO(vkBindImageMemory)
+  MACRO(vkBindImageMemory);                                                    \
+  MACRO(vkCreateSampler);                                                      \
+  MACRO(vkDestroySampler)
 
 #define MEMBER(name) PFN_##name name
   DEVICE_DEFS(MEMBER);
 #undef MEMBER
 
-  void loadFunctions();
-
 private:
   std::shared_ptr<Loader> loader = {};
   VkDevice device = VK_NULL_HANDLE;
+
+  void loadFunctions();
 };

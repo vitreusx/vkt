@@ -12,42 +12,133 @@
 #include <glm/gtc/quaternion.hpp>
 #include <vkt/vkt.h>
 #include <vkx/obj_model.h>
+#include <vkx/stb_image.h>
 
 struct Vertex {
   glm::vec3 pos;
   glm::vec3 color;
-
-  static VkVertexInputBindingDescription binding(uint32_t bindingIndex = 0) {
-    return {.binding = bindingIndex,
-            .stride = sizeof(Vertex),
-            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX};
-  }
-
-  static std::vector<VkVertexInputAttributeDescription>
-  attributes(uint32_t bindingIndex = 0) {
-    return {
-        VkVertexInputAttributeDescription{.location = 0,
-                                          .binding = bindingIndex,
-                                          .format = VK_FORMAT_R32G32B32_SFLOAT,
-                                          .offset = offsetof(Vertex, pos)},
-        VkVertexInputAttributeDescription{.location = 1,
-                                          .binding = bindingIndex,
-                                          .format = VK_FORMAT_R32G32B32_SFLOAT,
-                                          .offset = offsetof(Vertex, color)}};
-  }
+  glm::vec2 texCoord;
 };
 
-struct UniformValues {
+struct VSUnif {
   alignas(16) glm::mat4 mvp;
+};
 
-  static VkDescriptorSetLayoutBinding binding(uint32_t bindingIndex = 0) {
-    return VkDescriptorSetLayoutBinding{
-        .binding = bindingIndex,
-        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .descriptorCount = 1,
-        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-        .pImmutableSamplers = nullptr};
+struct MaterialData {
+  alignas(16) glm::vec3 ambient, diffuse, specular, transmittance, emission;
+  alignas(16) float shininess, ior, dissolve;
+  alignas(16) int illum;
+};
+
+class TriangleShaders {
+public:
+  TriangleShaders(std::shared_ptr<Device> device, std::string const &vsSource,
+                  std::string const &fsSource) {
+    this->device = device;
+    vertShader = std::make_shared<ShaderModule>(
+        device, ShaderModuleCreateInfo{.code = vsSource});
+    fragShader = std::make_shared<ShaderModule>(
+        device, ShaderModuleCreateInfo{.code = fsSource});
+
+    vertexInputState = {
+        .bindings = {{.binding = 0,
+                      .stride = sizeof(Vertex),
+                      .inputRate = VK_VERTEX_INPUT_RATE_VERTEX}},
+        .attributes = {{.location = 0,
+                        .binding = 0,
+                        .format = VK_FORMAT_R32G32B32_SFLOAT,
+                        .offset = offsetof(Vertex, pos)},
+                       {.location = 1,
+                        .binding = 0,
+                        .format = VK_FORMAT_R32G32B32_SFLOAT,
+                        .offset = offsetof(Vertex, color)},
+                       {.location = 2,
+                        .binding = 0,
+                        .format = VK_FORMAT_R32G32_SFLOAT,
+                        .offset = offsetof(Vertex, texCoord)}}};
+
+    perFrame = {{.binding = 0,
+                 .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                 .descriptorCount = 1,
+                 .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+                 .pImmutableSamplers = nullptr}};
+
+    perMaterial = {{.binding = 0,
+                    .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                    .descriptorCount = 1,
+                    .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+                    .pImmutableSamplers = nullptr}};
+
+    for (uint32_t binding = 1; binding <= 8; ++binding) {
+      perMaterial.push_back(VkDescriptorSetLayoutBinding{
+          .binding = binding,
+          .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+          .descriptorCount = 1,
+          .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+          .pImmutableSamplers = nullptr});
+    }
+
+    perFrameLayout = DescriptorSetLayout(device, {.bindings = perFrame});
+    perMaterialLayout = DescriptorSetLayout(device, {.bindings = perMaterial});
+
+    pipelineLayout = std::make_shared<PipelineLayout>(
+        device, PipelineLayoutCreateInfo{
+                    .setLayouts = {perFrameLayout, perMaterialLayout},
+                    .pushConstantRanges = {}});
+
+    shaderStages = {{.stage = VK_SHADER_STAGE_VERTEX_BIT,
+                     .module = vertShader,
+                     .name = "main"},
+                    {.stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+                     .module = fragShader,
+                     .name = "main"}};
   }
+
+  DescriptorPool createDescriptorPool(
+      std::vector<VkDescriptorSetLayoutBinding> const &bindings,
+      uint32_t setCount) {
+    std::map<VkDescriptorType, uint32_t> poolSizes;
+    for (auto const &binding : bindings) {
+      if (poolSizes.find(binding.descriptorType) == poolSizes.end())
+        poolSizes[binding.descriptorType] = 0;
+      poolSizes[binding.descriptorType] += setCount * binding.descriptorCount;
+    }
+
+    DescriptorPoolCreateInfo createInfo;
+    createInfo.maxSets = setCount;
+    for (auto const &[descriptorType, totalDescriptorCount] : poolSizes)
+      createInfo.poolSizes.push_back(
+          {.type = descriptorType, .descriptorCount = totalDescriptorCount});
+
+    return DescriptorPool(device, createInfo);
+  }
+
+  std::vector<VkDescriptorSet> createPerFrameSets(uint32_t count) {
+    auto &pool =
+        descriptorPools.emplace_back(createDescriptorPool(perFrame, count));
+    return pool.allocateDescriptorSets(
+        {.setLayouts =
+             std::vector<VkDescriptorSetLayout>(count, perFrameLayout)});
+  }
+
+  std::vector<VkDescriptorSet> createPerMaterialSets(uint32_t count) {
+    auto &pool =
+        descriptorPools.emplace_back(createDescriptorPool(perMaterial, count));
+    return pool.allocateDescriptorSets(
+        {.setLayouts =
+             std::vector<VkDescriptorSetLayout>(count, perMaterialLayout)});
+  }
+
+  std::shared_ptr<Device> device;
+  std::shared_ptr<ShaderModule> vertShader, fragShader;
+  VertexInputStateCreateInfo vertexInputState;
+  VkVertexInputBindingDescription inputBinding;
+  std::vector<VkVertexInputAttributeDescription> inputAttributes;
+  std::vector<VkDescriptorSetLayoutBinding> perFrame, perMaterial;
+  DescriptorSetLayout perFrameLayout, perMaterialLayout;
+  std::shared_ptr<PipelineLayout> pipelineLayout;
+  std::vector<DescriptorPool> descriptorPools;
+  std::vector<ShaderStageCreateInfo> shaderStages;
 };
 
 int main() {
@@ -66,7 +157,8 @@ int main() {
 
   auto vkRootDebuggerLogger = spdlog::stdout_color_mt("Vk root debugger");
 
-  std::vector<std::string> extensions = {"VK_KHR_portability_enumeration"};
+  std::vector<std::string> extensions = {
+      VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME};
 
   uint32_t numExtensions;
   auto extensionNames = glfwGetRequiredInstanceExtensions(&numExtensions);
@@ -74,7 +166,7 @@ int main() {
     extensions.push_back(extensionNames[idx]);
 
   auto instance = std::make_shared<Instance>(
-      loader, ApplicationInfo{},
+      loader, ApplicationInfo{.apiVersion = {.major = 1, .minor = 3}},
       InstanceCreateInfo{.flags =
                              VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR,
                          .enabledExtensions = extensions,
@@ -197,6 +289,9 @@ int main() {
         !transferQueueIndex.has_value())
       isSuitable = false;
 
+    if (physicalDevice.features.samplerAnisotropy != VK_TRUE)
+      isSuitable = false;
+
     return DeviceInfo{.isSuitable = isSuitable,
                       .score = score,
                       .graphicsQueueIndex = graphicsQueueIndex.value_or(0),
@@ -226,6 +321,7 @@ int main() {
   for (auto queueFamilyIndex : queueFamilyIndices)
     queueCreateInfos.emplace_back(DeviceQueueCreateInfo{
         .queueFamilyIndex = queueFamilyIndex, .queuePriorities = {1.0f}});
+
   auto device = std::make_shared<Device>(
       loader, physicalDevice,
       DeviceCreateInfo{.queueCreateInfos = queueCreateInfos,
@@ -250,48 +346,93 @@ int main() {
     throw std::runtime_error("Failed to find suitable memory type.");
   };
 
+  auto findFormat = [&](std::vector<VkFormat> const &candidates,
+                        VkFormatFeatureFlags const &requiredFeatures,
+                        bool optimal = true) -> VkFormat {
+    for (auto format : candidates) {
+      VkFormatProperties props;
+      loader->vkGetPhysicalDeviceFormatProperties(physicalDevice, format,
+                                                  &props);
+
+      if (optimal) {
+        if (props.optimalTilingFeatures & requiredFeatures == requiredFeatures)
+          return format;
+      } else {
+        if (props.linearTilingFeatures & requiredFeatures == requiredFeatures)
+          return format;
+      }
+    }
+
+    throw std::runtime_error("Cannot find proper format.");
+  };
+
+  auto stageToBuffer = [&](VkBuffer dest, void *data, uint32_t nbytes) {
+    auto staging =
+        Buffer(device, {.size = nbytes,
+                        .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+                        .queueFamilyIndices = {deviceInfo.transferQueueIndex}});
+
+    auto memoryReqs = staging.getMemoryRequirements();
+    auto stagingMemory = std::make_shared<DeviceMemory>(
+        device,
+        MemoryAllocateInfo{.size = memoryReqs.size,
+                           .memoryTypeIndex = findMemoryType(
+                               memoryReqs.memoryTypeBits,
+                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)});
+    VK_CHECK(device->vkBindBufferMemory(*device, staging, *stagingMemory, 0));
+
+    auto stagingMemoryMap = DeviceMemoryMap(stagingMemory);
+    std::memcpy(stagingMemoryMap.get(), data, nbytes);
+
+    auto copyCmdBuf = std::make_shared<CommandBuffer>(
+        device, CommandBufferAllocateInfo{
+                    .commandPool = std::make_shared<CommandPool>(
+                        device,
+                        CommandPoolCreateInfo{
+                            .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
+                            .queueFamilyIndex = deviceInfo.transferQueueIndex}),
+                    .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY});
+
+    {
+      auto rec = CommandBufferRecording(
+          copyCmdBuf,
+          CommandBufferBeginInfo{
+              .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT});
+
+      rec.copyBuffer(staging, dest, {VkBufferCopy{.size = nbytes}});
+    }
+
+    transferQueue.submit(QueueSubmitInfo{
+        .waitSemaphoresAndStages = {},
+        .commandBuffers = {(VkCommandBuffer)*copyCmdBuf},
+        .signalSemaphores = {},
+        .fence = VK_NULL_HANDLE,
+    });
+    transferQueue.wait();
+  };
+
   bool framebufferResized = false;
   window.onFramebufferSize = [&](int width, int height) -> void {
     framebufferResized = true;
   };
 
-  ShaderModuleCreateInfo vertCreateInfo;
-  {
-    auto vertIfs = std::ifstream("shaders/triangle.vert.spv");
-    vertCreateInfo.code = readFile(vertIfs);
-  }
-  auto vertShader = std::make_shared<ShaderModule>(device, vertCreateInfo);
-
-  ShaderModuleCreateInfo fragCreateInfo;
-  {
-    auto fragIfs = std::ifstream("shaders/triangle.frag.spv");
-    fragCreateInfo.code = readFile(fragIfs);
-  }
-  auto fragShader = std::make_shared<ShaderModule>(device, fragCreateInfo);
-
-  UniformValues unif;
-
-  auto unifDescriptorSetLayout = std::make_shared<DescriptorSetLayout>(
-      device, DescriptorSetLayoutCreateInfo{
-                  .flags = {}, .bindings = {UniformValues::binding(0)}});
-
   uint32_t maxFramesInFlight = 2;
 
-  auto unifDescriptorPool = DescriptorPool(
-      device,
-      DescriptorPoolCreateInfo{.maxSets = maxFramesInFlight,
-                               .poolSizes = {VkDescriptorPoolSize{
-                                   .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                                   .descriptorCount = maxFramesInFlight}}});
+  std::string vsSource, fsSource;
+  {
+    std::ifstream vsFile("shaders/triangle.vert.spv"),
+        fsFile("shaders/triangle.frag.spv");
+    vsSource = readFile(vsFile);
+    fsSource = readFile(fsFile);
+  }
 
-  auto unifDescriptorSets =
-      unifDescriptorPool.allocateDescriptorSets(DescriptorSetAllocateInfo{
-          .setLayouts = std::vector<std::shared_ptr<DescriptorSetLayout>>(
-              maxFramesInFlight, unifDescriptorSetLayout)});
+  auto triangleShaders = TriangleShaders(device, vsSource, fsSource);
+  auto pipelineLayout = triangleShaders.pipelineLayout;
 
-  auto pipelineLayout = std::make_shared<PipelineLayout>(
-      device, PipelineLayoutCreateInfo{.setLayouts = {*unifDescriptorSetLayout},
-                                       .pushConstantRanges = {}});
+  VSUnif vsUnif;
+  auto perFrameSets = triangleShaders.createPerFrameSets(maxFramesInFlight);
 
   Swapchain swapchain;
   std::vector<VkImage> images;
@@ -396,20 +537,9 @@ int main() {
 
   createSwapchain();
 
-  VkFormat depthFormat = {};
-  auto requiredFeature = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
-  for (auto format :
-       {VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT}) {
-    VkFormatProperties formatProps;
-    loader->vkGetPhysicalDeviceFormatProperties(physicalDevice, format,
-                                                &formatProps);
-
-    if (formatProps.optimalTilingFeatures &
-        requiredFeature == requiredFeature) {
-      depthFormat = format;
-      break;
-    }
-  }
+  VkFormat depthFormat =
+      findFormat({VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
+                 VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
 
   auto depthStencilImage = Image(
       device,
@@ -509,7 +639,7 @@ int main() {
                                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
               .dependencyFlags = {}}}});
 
-  auto model = ObjModel("assets/sibenik/sibenik.obj");
+  auto model = ObjModel("assets/teapot/teapot.obj");
 
   auto numVertices = model.attrib.vertices.size() / 3;
   std::vector<Vertex> vertices(numVertices);
@@ -519,16 +649,293 @@ int main() {
                                    model.attrib.vertices[3 * idx + 2]},
                            .color = {model.attrib.colors[3 * idx],
                                      model.attrib.colors[3 * idx + 1],
-                                     model.attrib.colors[3 * idx + 2]}};
+                                     model.attrib.colors[3 * idx + 2]},
+                           .texCoord = {model.attrib.texcoords[2 * idx],
+                                        model.attrib.texcoords[2 * idx + 1]}};
   }
 
-  auto numIndices = model.shapes[0].mesh.indices.size();
+  auto const &mesh = model.shapes[0].mesh;
+  auto numIndices = mesh.indices.size();
   std::vector<uint32_t> indices(numIndices);
   for (int idx = 0; idx < numIndices; ++idx)
-    indices[idx] = model.shapes[0].mesh.indices[idx].vertex_index;
+    indices[idx] = mesh.indices[idx].vertex_index;
 
   auto verticesSize = sizeof(Vertex) * vertices.size();
   auto indicesSize = sizeof(uint32_t) * indices.size();
+
+  struct Submesh {
+    uint32_t offset, count, mat;
+  };
+
+  std::vector<Submesh> submeshes;
+  uint32_t curStart = 0, curMaterial = mesh.material_ids[0];
+  for (uint32_t face = 1; face < mesh.material_ids.size(); ++face) {
+    if (mesh.material_ids[face] != curMaterial) {
+      submeshes.push_back(
+          Submesh{3 * curStart, 3 * (face - curStart), curMaterial});
+      curStart = face;
+      curMaterial = mesh.material_ids[face];
+    }
+  }
+  if (curStart < mesh.material_ids.size())
+    submeshes.push_back(Submesh{
+        3 * curStart, 3 * ((uint32_t)mesh.material_ids.size() - curStart),
+        curMaterial});
+
+  std::set<std::string> texNames = {""};
+  for (auto const &material : model.materials) {
+    if (!material.ambient_texname.empty())
+      texNames.insert(material.ambient_texname);
+    if (!material.diffuse_texname.empty())
+      texNames.insert(material.diffuse_texname);
+    if (!material.specular_texname.empty())
+      texNames.insert(material.specular_texname);
+    if (!material.emissive_texname.empty())
+      texNames.insert(material.emissive_texname);
+    if (!material.bump_texname.empty())
+      texNames.insert(material.bump_texname);
+  }
+
+  struct Texture {
+    Image image;
+    DeviceMemory memory;
+    ImageView imageView;
+    Sampler sampler;
+    VkImageLayout imageLayout;
+    uint32_t size;
+  };
+
+  std::map<std::string, Texture> textures;
+  for (auto texName : texNames) {
+    auto &tex = textures[texName];
+
+    std::filesystem::path texPath;
+    for (auto &c : texName)
+      if (c == '\\')
+        c = '/';
+
+    if (!texName.empty())
+      texPath = model.root / texName;
+    else
+      texPath = "assets/empty.png";
+
+    auto imageFile = StbImage(texPath, STBI_rgb_alpha);
+
+    auto texFormat = findFormat({VK_FORMAT_R8G8B8A8_SRGB},
+                                VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT);
+
+    auto imageExtent = VkExtent3D{.width = (uint32_t)imageFile.width,
+                                  .height = (uint32_t)imageFile.height,
+                                  .depth = 1};
+
+    tex.image = Image(
+        device,
+        ImageCreateInfo{.imageType = VK_IMAGE_TYPE_2D,
+                        .format = texFormat,
+                        .extent = imageExtent,
+                        .mipLevels = 1,
+                        .arrayLayers = 1,
+                        .samples = VK_SAMPLE_COUNT_1_BIT,
+                        .tiling = VK_IMAGE_TILING_OPTIMAL,
+                        .usage = VK_IMAGE_USAGE_SAMPLED_BIT |
+                                 VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                        .sharingMode = VK_SHARING_MODE_CONCURRENT,
+                        .queueFamilyIndices = {deviceInfo.graphicsQueueIndex,
+                                               deviceInfo.transferQueueIndex},
+                        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED});
+
+    VkMemoryRequirements memoryReqs;
+    device->vkGetImageMemoryRequirements(*device, tex.image, &memoryReqs);
+    tex.size = memoryReqs.size;
+
+    tex.memory = DeviceMemory(
+        device, MemoryAllocateInfo{.size = memoryReqs.size,
+                                   .memoryTypeIndex = findMemoryType(
+                                       memoryReqs.memoryTypeBits,
+                                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)});
+
+    device->vkBindImageMemory(*device, tex.image, tex.memory, 0);
+
+    auto subresourceRange =
+        VkImageSubresourceRange{.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                                .baseMipLevel = 0,
+                                .levelCount = 1,
+                                .baseArrayLayer = 0,
+                                .layerCount = 1};
+
+    tex.imageView = ImageView(
+        device, ImageViewCreateInfo{
+                    .image = tex.image,
+                    .viewType = VK_IMAGE_VIEW_TYPE_2D,
+                    .format = texFormat,
+                    .components =
+                        VkComponentMapping{.r = VK_COMPONENT_SWIZZLE_IDENTITY,
+                                           .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+                                           .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+                                           .a = VK_COMPONENT_SWIZZLE_IDENTITY},
+                    .subresourceRange = subresourceRange});
+
+    auto staging = Buffer(
+        device, BufferCreateInfo{
+                    .size = (uint32_t)imageFile.nbytes(),
+                    .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                    .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+                    .queueFamilyIndices = {deviceInfo.transferQueueIndex}});
+
+    memoryReqs = staging.getMemoryRequirements();
+    auto stagingMemory = std::make_shared<DeviceMemory>(
+        device,
+        MemoryAllocateInfo{.size = memoryReqs.size,
+                           .memoryTypeIndex = findMemoryType(
+                               memoryReqs.memoryTypeBits,
+                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)});
+    device->vkBindBufferMemory(*device, staging, *stagingMemory, 0);
+
+    {
+      auto stagingMap = DeviceMemoryMap(stagingMemory);
+      std::memcpy(stagingMap.get(), imageFile.data, imageFile.nbytes());
+    }
+
+    {
+      auto txCmdBuf = std::make_shared<CommandBuffer>(
+          device,
+          CommandBufferAllocateInfo{
+              .commandPool = std::make_shared<CommandPool>(
+                  device,
+                  CommandPoolCreateInfo{
+                      .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
+                      .queueFamilyIndex = deviceInfo.transferQueueIndex}),
+              .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY});
+
+      {
+        auto rec = CommandBufferRecording(
+            txCmdBuf,
+            CommandBufferBeginInfo{
+                .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT});
+
+        rec.pipelineBarrier(DependencyInfo{
+            .srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT,
+            .dependencyFlags = {},
+            .imageMemoryBarriers = {VkImageMemoryBarrier{
+                .srcAccessMask = {},
+                .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .image = tex.image,
+                .subresourceRange = subresourceRange}}});
+
+        rec.copyBufferToImage(CopyBufferToImageInfo{
+            .srcBuffer = staging,
+            .dstImage = tex.image,
+            .dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            .regions = {VkBufferImageCopy{
+                .bufferOffset = 0,
+                .bufferRowLength = 0,
+                .bufferImageHeight = 0,
+                .imageSubresource =
+                    VkImageSubresourceLayers{.aspectMask =
+                                                 VK_IMAGE_ASPECT_COLOR_BIT,
+                                             .mipLevel = 0,
+                                             .baseArrayLayer = 0,
+                                             .layerCount = 1},
+                .imageOffset = {},
+                .imageExtent = imageExtent}}});
+
+        rec.pipelineBarrier(DependencyInfo{
+            .srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            .dependencyFlags = {},
+            .imageMemoryBarriers = {VkImageMemoryBarrier{
+                .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+                .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .image = tex.image,
+                .subresourceRange = subresourceRange}}});
+      }
+
+      transferQueue.submit(QueueSubmitInfo{.commandBuffers = {*txCmdBuf}});
+      transferQueue.wait();
+    }
+
+    tex.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    tex.sampler = Sampler(
+        device, VkSamplerCreateInfo{
+                    .magFilter = VK_FILTER_LINEAR,
+                    .minFilter = VK_FILTER_LINEAR,
+                    .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+                    .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                    .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                    .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                    .mipLodBias = 0.0f,
+                    .anisotropyEnable = VK_TRUE,
+                    .maxAnisotropy =
+                        physicalDevice.properties.limits.maxSamplerAnisotropy,
+                    .compareEnable = VK_FALSE,
+                    .compareOp = VK_COMPARE_OP_ALWAYS,
+                    .minLod = 0.0f,
+                    .maxLod = 0.0f,
+                    .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+                    .unnormalizedCoordinates = VK_FALSE});
+  }
+
+  uint32_t numMaterials = model.materials.size();
+  auto perMaterialSets =
+      triangleShaders.createPerMaterialSets(maxFramesInFlight * numMaterials);
+
+  struct Material {
+    Buffer dataBuf;
+    DeviceMemory dataBufMemory;
+    std::vector<std::string> texNames;
+  };
+  std::vector<Material> vkMaterials;
+
+  for (auto &mat : model.materials) {
+    auto &vkMat = vkMaterials.emplace_back();
+
+    auto matData = MaterialData{
+        .ambient = {mat.ambient[0], mat.ambient[1], mat.ambient[2]},
+        .diffuse = {mat.diffuse[0], mat.diffuse[1], mat.diffuse[2]},
+        .specular = {mat.specular[0], mat.specular[1], mat.specular[2]},
+        .transmittance = {mat.transmittance[0], mat.transmittance[1],
+                          mat.transmittance[2]},
+        .emission = {mat.emission[0], mat.emission[1], mat.emission[2]},
+        .shininess = mat.shininess,
+        .ior = mat.ior,
+        .dissolve = mat.dissolve,
+        .illum = mat.illum};
+
+    vkMat.dataBuf =
+        Buffer(device, {.size = sizeof(MaterialData),
+                        .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+                                 VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                        .sharingMode = VK_SHARING_MODE_CONCURRENT,
+                        .queueFamilyIndices = {deviceInfo.graphicsQueueIndex,
+                                               deviceInfo.transferQueueIndex}});
+
+    auto memReqs = vkMat.dataBuf.getMemoryRequirements();
+    vkMat.dataBufMemory = DeviceMemory(
+        device,
+        {.size = memReqs.size,
+         .memoryTypeIndex = findMemoryType(
+             memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)});
+    VK_CHECK(device->vkBindBufferMemory(*device, vkMat.dataBuf,
+                                        vkMat.dataBufMemory, 0));
+
+    stageToBuffer(vkMat.dataBuf, &vkMat, sizeof(vkMat));
+
+    vkMat.texNames = {mat.ambient_texname,  mat.diffuse_texname,
+                      mat.specular_texname, mat.specular_highlight_texname,
+                      mat.bump_texname,     mat.displacement_texname,
+                      mat.alpha_texname,    mat.reflection_texname};
+  }
 
   auto vertexBuffer = std::make_shared<Buffer>(
       device, BufferCreateInfo{
@@ -539,14 +946,16 @@ int main() {
                   .queueFamilyIndices = {deviceInfo.graphicsQueueIndex,
                                          deviceInfo.transferQueueIndex},
               });
-  auto vbMemoryReqs = vertexBuffer->getMemoryRequirements();
 
+  auto vbMemoryReqs = vertexBuffer->getMemoryRequirements();
   auto vbMemory = DeviceMemory(
       device, MemoryAllocateInfo{.size = vbMemoryReqs.size,
                                  .memoryTypeIndex = findMemoryType(
                                      vbMemoryReqs.memoryTypeBits,
                                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)});
   VK_CHECK(device->vkBindBufferMemory(*device, *vertexBuffer, vbMemory, 0));
+
+  stageToBuffer(*vertexBuffer, vertices.data(), verticesSize);
 
   auto indexBuffer = std::make_shared<Buffer>(
       device,
@@ -556,8 +965,8 @@ int main() {
                        .sharingMode = VK_SHARING_MODE_CONCURRENT,
                        .queueFamilyIndices = {deviceInfo.graphicsQueueIndex,
                                               deviceInfo.transferQueueIndex}});
-  auto ibMemoryReqs = indexBuffer->getMemoryRequirements();
 
+  auto ibMemoryReqs = indexBuffer->getMemoryRequirements();
   auto ibMemory = DeviceMemory(
       device, MemoryAllocateInfo{.size = ibMemoryReqs.size,
                                  .memoryTypeIndex = findMemoryType(
@@ -565,118 +974,13 @@ int main() {
                                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)});
   VK_CHECK(device->vkBindBufferMemory(*device, *indexBuffer, ibMemory, 0));
 
-  {
-    auto stagingBuffer = std::make_shared<Buffer>(
-        device, BufferCreateInfo{
-                    .size = verticesSize,
-                    .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                    .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-                    .queueFamilyIndices = {deviceInfo.transferQueueIndex}});
-    auto stagingMemoryReqs = stagingBuffer->getMemoryRequirements();
-
-    auto stagingMemory = std::make_shared<DeviceMemory>(
-        device,
-        MemoryAllocateInfo{.size = stagingMemoryReqs.size,
-                           .memoryTypeIndex = findMemoryType(
-                               stagingMemoryReqs.memoryTypeBits,
-                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)});
-    VK_CHECK(
-        device->vkBindBufferMemory(*device, *stagingBuffer, *stagingMemory, 0));
-
-    auto stagingMemoryMap = DeviceMemoryMap(stagingMemory);
-    std::memcpy(stagingMemoryMap.get(), vertices.data(), verticesSize);
-
-    auto commandBuffer = std::make_shared<CommandBuffer>(
-        device, CommandBufferAllocateInfo{
-                    .commandPool = std::make_shared<CommandPool>(
-                        device,
-                        CommandPoolCreateInfo{
-                            .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
-                            .queueFamilyIndex = deviceInfo.transferQueueIndex}),
-                    .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY});
-
-    {
-      auto recording = CommandBufferRecording(
-          commandBuffer,
-          CommandBufferBeginInfo{
-              .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT});
-
-      recording.copyBuffer(*stagingBuffer, *vertexBuffer,
-                           {VkBufferCopy{.size = verticesSize}});
-    }
-
-    transferQueue.submit(QueueSubmitInfo{
-        .waitSemaphoresAndStages = {},
-        .commandBuffers = {(VkCommandBuffer)*commandBuffer},
-        .signalSemaphores = {},
-        .fence = VK_NULL_HANDLE,
-    });
-    transferQueue.wait();
-  }
-
-  {
-    auto stagingBuffer = std::make_shared<Buffer>(
-        device, BufferCreateInfo{
-                    .size = indicesSize,
-                    .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                    .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-                    .queueFamilyIndices = {deviceInfo.transferQueueIndex}});
-    auto stagingMemoryReqs = stagingBuffer->getMemoryRequirements();
-
-    auto stagingMemory = std::make_shared<DeviceMemory>(
-        device,
-        MemoryAllocateInfo{.size = stagingMemoryReqs.size,
-                           .memoryTypeIndex = findMemoryType(
-                               stagingMemoryReqs.memoryTypeBits,
-                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)});
-    VK_CHECK(
-        device->vkBindBufferMemory(*device, *stagingBuffer, *stagingMemory, 0));
-
-    auto stagingMemoryMap = DeviceMemoryMap(stagingMemory);
-    std::memcpy(stagingMemoryMap.get(), indices.data(), indicesSize);
-
-    auto commandBuffer = std::make_shared<CommandBuffer>(
-        device, CommandBufferAllocateInfo{
-                    .commandPool = std::make_shared<CommandPool>(
-                        device,
-                        CommandPoolCreateInfo{
-                            .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
-                            .queueFamilyIndex = deviceInfo.transferQueueIndex}),
-                    .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY});
-
-    {
-      auto recording = CommandBufferRecording(
-          commandBuffer,
-          CommandBufferBeginInfo{
-              .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT});
-
-      recording.copyBuffer(*stagingBuffer, *indexBuffer,
-                           {VkBufferCopy{.size = indicesSize}});
-    }
-
-    transferQueue.submit(QueueSubmitInfo{
-        .waitSemaphoresAndStages = {},
-        .commandBuffers = {(VkCommandBuffer)*commandBuffer},
-        .signalSemaphores = {},
-        .fence = VK_NULL_HANDLE,
-    });
-    transferQueue.wait();
-  }
+  stageToBuffer(*indexBuffer, indices.data(), indicesSize);
 
   auto pipeline = std::make_shared<GraphicsPipeline>(
       device,
       GraphicsPipelineCreateInfo{
-          .shaderStages =
-              {ShaderStageCreateInfo{.stage = VK_SHADER_STAGE_VERTEX_BIT,
-                                     .module = vertShader,
-                                     .name = "main"},
-               ShaderStageCreateInfo{.stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-                                     .module = fragShader,
-                                     .name = "main"}},
-          .vertexInputState = {.bindings = {Vertex::binding()},
-                               .attributes = Vertex::attributes()},
+          .shaderStages = triangleShaders.shaderStages,
+          .vertexInputState = triangleShaders.vertexInputState,
           .inputAssemblyState =
               {
                   .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
@@ -749,14 +1053,18 @@ int main() {
     std::shared_ptr<CommandBuffer> commandBuffer;
     Fence inFlight;
     Semaphore imageAvailable, renderFinished;
-    std::shared_ptr<Buffer> unifBuffer;
-    DeviceMemoryMap unifMemoryPtr;
-    VkDescriptorSet descriptorSet;
+    std::shared_ptr<Buffer> unifVsBuffer;
+    DeviceMemoryMap unifVsPtr;
+    VkDescriptorSet perFrameSet;
+    std::vector<VkDescriptorSet> perMaterialSets;
   };
 
   std::vector<Frame> frames;
+  std::vector<DescriptorOp> descriptorOps;
   for (int frameIndex = 0; frameIndex < maxFramesInFlight; ++frameIndex) {
-    auto commandBuffer = std::make_shared<CommandBuffer>(
+    auto &frame = frames.emplace_back();
+
+    frame.commandBuffer = std::make_shared<CommandBuffer>(
         device,
         CommandBufferAllocateInfo{
             .commandPool = std::make_shared<CommandPool>(
@@ -766,45 +1074,75 @@ int main() {
                     .queueFamilyIndex = deviceInfo.graphicsQueueIndex}),
             .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY});
 
-    auto unifBuffer = std::make_shared<Buffer>(
+    frame.unifVsBuffer = std::make_shared<Buffer>(
         device, BufferCreateInfo{
-                    .size = sizeof(unif),
+                    .size = sizeof(VSUnif),
                     .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                     .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
                     .queueFamilyIndices = {deviceInfo.graphicsQueueIndex}});
-    auto unifMemoryReqs = unifBuffer->getMemoryRequirements();
 
-    auto unifMemory = std::make_shared<DeviceMemory>(
+    auto unifVsMemReqs = frame.unifVsBuffer->getMemoryRequirements();
+    auto unifVsMemory = std::make_shared<DeviceMemory>(
         device,
-        MemoryAllocateInfo{.size = unifMemoryReqs.size,
+        MemoryAllocateInfo{.size = unifVsMemReqs.size,
                            .memoryTypeIndex = findMemoryType(
-                               unifMemoryReqs.memoryTypeBits,
+                               unifVsMemReqs.memoryTypeBits,
                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)});
-    VK_CHECK(device->vkBindBufferMemory(*device, *unifBuffer, *unifMemory, 0));
+    VK_CHECK(device->vkBindBufferMemory(*device, *frame.unifVsBuffer,
+                                        *unifVsMemory, 0));
 
-    auto unifMemoryPtr = DeviceMemoryMap(unifMemory);
+    frame.unifVsPtr = DeviceMemoryMap(unifVsMemory);
 
-    auto descriptorSet = unifDescriptorSets[frameIndex];
+    frame.perFrameSet = perFrameSets[frameIndex];
+    descriptorOps.push_back(WriteDescriptorSet{
+        .dstSet = frame.perFrameSet,
+        .dstBinding = 0,
+        .dstArrayElement = 0,
+        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .bufferInfos = {VkDescriptorBufferInfo{.buffer = *frame.unifVsBuffer,
+                                               .offset = 0,
+                                               .range = sizeof(VSUnif)}}});
 
-    unifDescriptorPool.updateDescriptorSets(
-        {WriteDescriptorSet{.dstSet = descriptorSet,
-                            .dstBinding = 0,
-                            .dstArrayElement = 0,
-                            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                            .bufferInfos = {VkDescriptorBufferInfo{
-                                .buffer = *unifBuffer,
-                                .offset = 0,
-                                .range = sizeof(UniformValues)}}}});
+    for (uint32_t matIdx = 0; matIdx < numMaterials; ++matIdx) {
+      auto matSet = perMaterialSets[frameIndex * numMaterials + matIdx];
+      frame.perMaterialSets.push_back(matSet);
 
-    frames.push_back(Frame{.commandBuffer = commandBuffer,
-                           .inFlight = Fence(device, true),
-                           .imageAvailable = Semaphore(device),
-                           .renderFinished = Semaphore(device),
-                           .unifBuffer = unifBuffer,
-                           .unifMemoryPtr = unifMemoryPtr,
-                           .descriptorSet = descriptorSet});
+      auto &vkMat = vkMaterials[matIdx];
+
+      uint32_t curBinding = 0;
+
+      descriptorOps.push_back(WriteDescriptorSet{
+          .dstSet = matSet,
+          .dstBinding = (curBinding++),
+          .dstArrayElement = 0,
+          .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+          .bufferInfos = {
+              VkDescriptorBufferInfo{.buffer = vkMat.dataBuf,
+                                     .offset = 0,
+                                     .range = sizeof(MaterialData)}}});
+
+      for (auto const &texName : vkMat.texNames) {
+        auto &tex = textures[texName];
+        descriptorOps.push_back(WriteDescriptorSet{
+            .dstSet = matSet,
+            .dstBinding = (curBinding++),
+            .dstArrayElement = 0,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .imageInfos = {
+                VkDescriptorImageInfo{.sampler = tex.sampler,
+                                      .imageView = tex.imageView,
+                                      .imageLayout = tex.imageLayout}}});
+      }
+    }
+
+    frame.inFlight = Fence(device, true);
+    frame.imageAvailable = Semaphore(device);
+    frame.renderFinished = Semaphore(device);
   }
+
+  device->updateDescriptorSets(descriptorOps);
+  descriptorOps.clear();
 
   glm::vec3 cameraPos = {2.0f, 2.0f, 2.0f};
   glm::vec<3, int> velocity = {0, 0, 0};
@@ -888,22 +1226,8 @@ int main() {
     prevTime = curTime;
     prevCursorPos = cursorPos;
 
-    // float elapsed;
-    // {
-    //   using namespace std::chrono;
-    //   auto timeDiff = curTime - startTime;
-    //   elapsed = duration_cast<nanoseconds>(timeDiff).count() * 1.0e-9f;
-    // }
-
-    // auto model = glm::rotate(glm::mat4(1.0f), elapsed *
-    // glm::radians(90.0f),
-    //                          glm::vec3(0.0f, 0.0f, 1.0f));
-
     auto model = glm::identity<glm::mat4>();
 
-    // glm::vec3 lookDir = {cos(yaw) * cos(pitch), sin(pitch),
-    //                      sin(yaw) * cos(pitch)};
-    // auto view = glm::lookAt(cameraPos, cameraPos + lookDir, up);
     auto up = rotQuat * glm::vec3{0.0f, 1.0f, 0.0f},
          lookDir = rotQuat * glm::vec3{0.0f, 0.0f, 1.0f};
     auto view = glm::lookAt(cameraPos, cameraPos + lookDir, up);
@@ -912,8 +1236,8 @@ int main() {
                                  swapExtent.width / (float)swapExtent.height,
                                  0.01f, 1000.0f);
 
-    unif.mvp = proj * view * model;
-    std::memcpy(frame.unifMemoryPtr.get(), &unif, sizeof(UniformValues));
+    vsUnif.mvp = proj * view * model;
+    std::memcpy(frame.unifVsPtr.get(), &vsUnif, sizeof(VSUnif));
 
     frame.inFlight.wait();
 
@@ -937,41 +1261,46 @@ int main() {
       auto cmdBufRecording = std::make_shared<CommandBufferRecording>(
           frame.commandBuffer, CommandBufferBeginInfo{.flags = {}});
 
+      auto cmdBufRenderPass = CommandBufferRenderPass(
+          cmdBufRecording,
+          RenderPassBeginInfo{
+              .renderPass = renderPass,
+              .framebuffer = framebuffer,
+              .renderArea = VkRect2D{.offset = {0, 0}, .extent = swapExtent},
+              .clearValues =
+                  {VkClearValue{.color = {.float32 = {0.0f, 0.0f, 0.0f, 1.0f}}},
+                   VkClearValue{.depthStencil = {1.0f, (uint32_t)0}}},
+              .subpassContents = VK_SUBPASS_CONTENTS_INLINE});
+
+      cmdBufRenderPass.bindVertexBuffers({{vertexBuffer, (VkDeviceSize)0}});
+
+      cmdBufRenderPass.bindIndexBuffer(*indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+      cmdBufRenderPass.setViewport(
+          VkViewport{.x = 0.0f,
+                     .y = 0.0f,
+                     .width = (float)swapExtent.width,
+                     .height = (float)swapExtent.height,
+                     .minDepth = 0.0f,
+                     .maxDepth = 1.0f});
+
+      cmdBufRenderPass.setScissor(
+          VkRect2D{.offset = {0, 0}, .extent = swapExtent});
+
       cmdBufRecording->bindDescriptorSets(VK_PIPELINE_BIND_POINT_GRAPHICS,
                                           *pipelineLayout, 0,
-                                          {frame.descriptorSet});
+                                          {frame.perFrameSet});
 
-      {
-        auto cmdBufRenderPass = CommandBufferRenderPass(
-            cmdBufRecording,
-            RenderPassBeginInfo{
-                .renderPass = renderPass,
-                .framebuffer = framebuffer,
-                .renderArea = VkRect2D{.offset = {0, 0}, .extent = swapExtent},
-                .clearValues =
-                    {VkClearValue{
-                         .color = {.float32 = {0.0f, 0.0f, 0.0f, 1.0f}}},
-                     VkClearValue{.depthStencil = {1.0f, (uint32_t)0}}},
-                .subpassContents = VK_SUBPASS_CONTENTS_INLINE});
+      for (uint32_t index = 0; index < submeshes.size(); ++index) {
+        auto &submesh = submeshes[index];
 
         cmdBufRenderPass.bindPipeline(pipeline);
 
-        cmdBufRenderPass.bindVertexBuffers({{vertexBuffer, (VkDeviceSize)0}});
+        auto materialSet = frame.perMaterialSets[submesh.mat];
+        cmdBufRecording->bindDescriptorSets(VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                            *pipelineLayout, 1, {materialSet});
 
-        cmdBufRenderPass.bindIndexBuffer(*indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-
-        cmdBufRenderPass.setViewport(
-            VkViewport{.x = 0.0f,
-                       .y = 0.0f,
-                       .width = (float)swapExtent.width,
-                       .height = (float)swapExtent.height,
-                       .minDepth = 0.0f,
-                       .maxDepth = 1.0f});
-
-        cmdBufRenderPass.setScissor(
-            VkRect2D{.offset = {0, 0}, .extent = swapExtent});
-
-        cmdBufRenderPass.drawIndexed(indices.size(), 1, 0, 0, 0);
+        cmdBufRenderPass.drawIndexed(submesh.count, 1, submesh.offset, 0, 0);
       }
     }
 

@@ -12,6 +12,8 @@ struct ImageViewCreateInfo {
 
 class ImageView {
 public:
+  ImageView() = default;
+
   ImageView(std::shared_ptr<Device> device,
             ImageViewCreateInfo imageViewCreateInfo);
 

@@ -46,7 +46,8 @@ target_compile_options(${TARGET}
     $<$<CONFIG:Debug>:-g>
     $<$<CONFIG:Release>:-O2>)
 
-target_link_libraries(${TARGET} PUBLIC vkt tinyobjloader spdlog::spdlog)
+target_link_libraries(${TARGET} PUBLIC
+    vkt tinyobjloader spdlog::spdlog stb)
 
 function(add_spirv_shader INPUT_FILE OUTPUT_FILE)
     cmake_path(GET OUTPUT_FILE PARENT_PATH OUTPUT_PARENT)

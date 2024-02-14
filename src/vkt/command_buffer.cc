@@ -34,7 +34,11 @@ void CommandBuffer::reset(VkCommandBufferResetFlags flags) {
 }
 
 void CommandBuffer::loadFunctions() {
-#define LOAD(name) this->name = (PFN_##name)vkGetDeviceProcAddr(*device, #name)
+#define LOAD(name)                                                             \
+  this->name = (PFN_##name)vkGetDeviceProcAddr(*device, #name);                \
+  if (this->name == nullptr)                                                   \
+    throw std::runtime_error(#name);
+
   CMD_BUF_DEFS(LOAD);
 #undef LOAD
 }
@@ -85,6 +89,40 @@ void CommandBufferRecording::bindDescriptorSets(
       *commandBuffer, pipelineBindPoint, layout, firstSet,
       (uint32_t)descriptorSets.size(), descriptorSets.data(),
       dynamicOffsetCount, pDynamicOffsets);
+}
+
+void CommandBufferRecording::pipelineBarrier(DependencyInfo const &depInfo) {
+  for (auto &memoryBarrier : depInfo.memoryBarriers) {
+    memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    memoryBarrier.pNext = nullptr;
+  }
+
+  for (auto &bufferMemoryBarrier : depInfo.bufferMemoryBarriers) {
+    bufferMemoryBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    bufferMemoryBarrier.pNext = nullptr;
+  }
+
+  for (auto &imageMemoryBarrier : depInfo.imageMemoryBarriers) {
+    imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    imageMemoryBarrier.pNext = nullptr;
+  }
+
+  commandBuffer->vkCmdPipelineBarrier(
+      *commandBuffer, depInfo.srcStageMask, depInfo.dstStageMask,
+      depInfo.dependencyFlags, (uint32_t)depInfo.memoryBarriers.size(),
+      depInfo.memoryBarriers.data(),
+      (uint32_t)depInfo.bufferMemoryBarriers.size(),
+      depInfo.bufferMemoryBarriers.data(),
+      (uint32_t)depInfo.imageMemoryBarriers.size(),
+      depInfo.imageMemoryBarriers.data());
+}
+
+void CommandBufferRecording::copyBufferToImage(
+    CopyBufferToImageInfo const &copyInfo) {
+  commandBuffer->vkCmdCopyBufferToImage(
+      *commandBuffer, copyInfo.srcBuffer, copyInfo.dstImage,
+      copyInfo.dstImageLayout, (uint32_t)copyInfo.regions.size(),
+      copyInfo.regions.data());
 }
 
 CommandBufferRenderPass::CommandBufferRenderPass(
@@ -164,4 +202,8 @@ void CommandBufferRenderPass::bindIndexBuffer(VkBuffer buffer,
                                               VkIndexType indexType) {
   commandBuffer->vkCmdBindIndexBuffer(*commandBuffer, buffer, offset,
                                       indexType);
+}
+
+void CommandBufferRenderPass::nextSubpass(VkSubpassContents contents) {
+  commandBuffer->vkCmdNextSubpass(*commandBuffer, contents);
 }

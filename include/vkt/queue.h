@@ -1,6 +1,19 @@
 #pragma once
 #include <vkt/device.h>
 
+struct QueueSubmitInfo {
+  std::vector<std::pair<VkSemaphore, VkPipelineStageFlags>>
+      waitSemaphoresAndStages;
+  std::vector<VkCommandBuffer> commandBuffers;
+  std::vector<VkSemaphore> signalSemaphores;
+  VkFence fence;
+};
+
+struct QueuePresentInfo {
+  std::vector<VkSemaphore> waitSemaphores;
+  std::vector<std::pair<VkSwapchainKHR, uint32_t>> swapchainsAndImageIndices;
+};
+
 class Queue {
 public:
   Queue() = default;

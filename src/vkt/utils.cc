@@ -7,7 +7,7 @@ std::vector<char const *> vkMapNames(std::vector<std::string> const &names) {
   });
 }
 
-std::string readFile(std::ifstream &is) {
+std::string readFile(std::istream &is) {
   std::stringstream buffer;
   buffer << is.rdbuf();
   return buffer.str();

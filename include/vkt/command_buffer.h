@@ -44,7 +44,9 @@ public:
   MACRO(vkCmdCopyBuffer);                                                      \
   MACRO(vkCmdDrawIndexed);                                                     \
   MACRO(vkCmdBindIndexBuffer);                                                 \
-  MACRO(vkCmdBindDescriptorSets)
+  MACRO(vkCmdBindDescriptorSets);                                              \
+  MACRO(vkCmdCopyBufferToImage);                                               \
+  MACRO(vkCmdNextSubpass)
 
 #define MEMBER(name) PFN_##name name
   CMD_BUF_DEFS(MEMBER);
@@ -60,6 +62,22 @@ private:
 
 struct CommandBufferBeginInfo {
   VkCommandBufferUsageFlags flags;
+};
+
+struct DependencyInfo {
+  VkPipelineStageFlags srcStageMask;
+  VkPipelineStageFlags dstStageMask;
+  VkDependencyFlags dependencyFlags;
+  mutable std::vector<VkMemoryBarrier> memoryBarriers;
+  mutable std::vector<VkBufferMemoryBarrier> bufferMemoryBarriers;
+  mutable std::vector<VkImageMemoryBarrier> imageMemoryBarriers;
+};
+
+struct CopyBufferToImageInfo {
+  VkBuffer srcBuffer;
+  VkImage dstImage;
+  VkImageLayout dstImageLayout;
+  std::vector<VkBufferImageCopy> regions;
 };
 
 class CommandBufferRecording {
@@ -84,6 +102,10 @@ public:
                           std::vector<VkDescriptorSet> const &descriptorSets,
                           std::optional<std::vector<uint32_t>> const
                               &dynamicOffsets = std::nullopt);
+
+  void pipelineBarrier(DependencyInfo const &depInfo);
+
+  void copyBufferToImage(CopyBufferToImageInfo const &copyInfo);
 
 public:
   std::shared_ptr<CommandBuffer> commandBuffer;
@@ -126,6 +148,8 @@ public:
   void drawIndexed(uint32_t indexCount, uint32_t instanceCount,
                    uint32_t firstIndex, int32_t vertexOffset,
                    uint32_t firstInstance);
+
+  void nextSubpass(VkSubpassContents contents);
 
 private:
   std::shared_ptr<CommandBuffer> commandBuffer;

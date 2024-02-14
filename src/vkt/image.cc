@@ -4,6 +4,14 @@ Image::Image(std::shared_ptr<Device> device,
              ImageCreateInfo const &createInfo) {
   this->device = device;
 
+  std::vector<uint32_t> queueFamilyIndices;
+  for (auto queueFamilyIndex : createInfo.queueFamilyIndices)
+    queueFamilyIndices.push_back(queueFamilyIndex);
+
+  auto sharingMode = createInfo.sharingMode;
+  if (queueFamilyIndices.size() == 1)
+    sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
   auto vk_createInfo = VkImageCreateInfo{
       .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
       .pNext = nullptr,
@@ -16,9 +24,9 @@ Image::Image(std::shared_ptr<Device> device,
       .samples = createInfo.samples,
       .tiling = createInfo.tiling,
       .usage = createInfo.usage,
-      .sharingMode = createInfo.sharingMode,
-      .queueFamilyIndexCount = (uint32_t)createInfo.queueFamilyIndices.size(),
-      .pQueueFamilyIndices = createInfo.queueFamilyIndices.data(),
+      .sharingMode = sharingMode,
+      .queueFamilyIndexCount = (uint32_t)queueFamilyIndices.size(),
+      .pQueueFamilyIndices = queueFamilyIndices.data(),
       .initialLayout = createInfo.initialLayout,
   };
 

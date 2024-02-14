@@ -12,6 +12,8 @@ class DeviceMemoryMap;
 
 class DeviceMemory {
 public:
+  DeviceMemory() = default;
+
   DeviceMemory(std::shared_ptr<Device> device,
                MemoryAllocateInfo const &allocInfo);
 

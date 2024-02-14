@@ -4,7 +4,8 @@
 #include <type_traits>
 #include <istream>
 #include <vector>
-#include <fstream>
+#include <vulkan/vk_enum_string_helper.h>
+#include <sstream>
 
 template <typename _Res, typename... _ArgTypes>
 class ICallback {
@@ -85,8 +86,12 @@ std::vector<char const *> vkMapNames(std::vector<std::string> const &names);
 #define VK_CHECK(expr)                                                         \
   ([&]() -> void {                                                             \
     VkResult __result = (expr);                                                \
-    if (__result != VK_SUCCESS)                                                \
-      throw std::runtime_error("Vk error: " #expr);                            \
+    if (__result != VK_SUCCESS) {                                              \
+      std::stringstream error_ss;                                              \
+      error_ss << "Vk error [" << string_VkResult(__result) << "] ("           \
+               << (#expr) << ")";                                              \
+      throw std::runtime_error(error_ss.str());                                \
+    }                                                                          \
   })()
 
 template <typename Iter, typename Key>
@@ -103,4 +108,4 @@ auto find_max(Iter begin, Iter end, Key key) {
   return best;
 }
 
-std::string readFile(std::ifstream &is);
+std::string readFile(std::istream &is);

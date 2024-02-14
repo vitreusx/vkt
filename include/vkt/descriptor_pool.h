@@ -1,7 +1,6 @@
 #pragma once
 #include <vkt/device.h>
 #include <vkt/descriptor_set_layout.h>
-#include <variant>
 
 struct DescriptorPoolCreateInfo {
   uint32_t maxSets;
@@ -9,31 +8,12 @@ struct DescriptorPoolCreateInfo {
 };
 
 struct DescriptorSetAllocateInfo {
-  std::vector<std::shared_ptr<DescriptorSetLayout>> setLayouts;
-};
-
-struct WriteDescriptorSet {
-  VkDescriptorSet dstSet;
-  uint32_t dstBinding;
-  uint32_t dstArrayElement;
-  VkDescriptorType descriptorType;
-  std::vector<VkDescriptorImageInfo> imageInfos;
-  std::vector<VkDescriptorBufferInfo> bufferInfos;
-  std::vector<VkBufferView> texelBufferViews;
-};
-
-struct CopyDescriptorSet {
-  VkDescriptorSet srcSet;
-  uint32_t srcBinding;
-  uint32_t srcArrayElement;
-  VkDescriptorSet dstSet;
-  uint32_t dstBinding;
-  uint32_t dstArrayElement;
-  uint32_t descriptorCount;
+  std::vector<VkDescriptorSetLayout> setLayouts;
 };
 
 class DescriptorPool {
 public:
+  DescriptorPool() = default;
   DescriptorPool(std::shared_ptr<Device> device,
                  DescriptorPoolCreateInfo const &createInfo);
 
@@ -49,10 +29,6 @@ public:
 
   std::vector<VkDescriptorSet>
   allocateDescriptorSets(DescriptorSetAllocateInfo const &allocInfo);
-
-  void updateDescriptorSets(
-      std::vector<std::variant<WriteDescriptorSet, CopyDescriptorSet>>
-          operations);
 
 private:
   std::shared_ptr<Device> device = {};

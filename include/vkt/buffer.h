@@ -11,6 +11,7 @@ struct BufferCreateInfo {
 
 class Buffer {
 public:
+  Buffer() = default;
   Buffer(std::shared_ptr<Device> device, BufferCreateInfo const &createInfo);
 
   Buffer(Buffer const &) = delete;

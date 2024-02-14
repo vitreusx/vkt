@@ -8,6 +8,7 @@ struct DescriptorSetLayoutCreateInfo {
 
 class DescriptorSetLayout {
 public:
+  DescriptorSetLayout() = default;
   DescriptorSetLayout(std::shared_ptr<Device> device,
                       DescriptorSetLayoutCreateInfo const &createInfo);
 
