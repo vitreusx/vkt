@@ -13,10 +13,12 @@
 #include <vkt/vkt.h>
 #include <vkx/obj_model.h>
 #include <vkx/stb_image.h>
+#include <map>
 
 struct Vertex {
   glm::vec3 pos;
   glm::vec3 color;
+  glm::vec3 normal;
   glm::vec2 texCoord;
 };
 
@@ -53,6 +55,10 @@ public:
                         .format = VK_FORMAT_R32G32B32_SFLOAT,
                         .offset = offsetof(Vertex, color)},
                        {.location = 2,
+                        .binding = 0,
+                        .format = VK_FORMAT_R32G32B32_SFLOAT,
+                        .offset = offsetof(Vertex, normal)},
+                       {.location = 3,
                         .binding = 0,
                         .format = VK_FORMAT_R32G32_SFLOAT,
                         .offset = offsetof(Vertex, texCoord)}}};
@@ -639,26 +645,51 @@ int main() {
                                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
               .dependencyFlags = {}}}});
 
-  auto model = ObjModel("assets/teapot/teapot.obj");
+  auto model = ObjModel("assets/sibenik/sibenik.obj");
+  auto const &mesh = model.shapes[0].mesh;
 
-  auto numVertices = model.attrib.vertices.size() / 3;
-  std::vector<Vertex> vertices(numVertices);
-  for (int idx = 0; idx < numVertices; ++idx) {
-    vertices[idx] = Vertex{.pos = {model.attrib.vertices[3 * idx],
-                                   model.attrib.vertices[3 * idx + 1],
-                                   model.attrib.vertices[3 * idx + 2]},
-                           .color = {model.attrib.colors[3 * idx],
-                                     model.attrib.colors[3 * idx + 1],
-                                     model.attrib.colors[3 * idx + 2]},
-                           .texCoord = {model.attrib.texcoords[2 * idx],
-                                        model.attrib.texcoords[2 * idx + 1]}};
+  uint32_t numBaseVertices = model.attrib.vertices.size() / 3;
+  std::vector<Vertex> baseVertices(numBaseVertices);
+  for (int idx = 0; idx < numBaseVertices; ++idx) {
+    baseVertices[idx] =
+        Vertex{.pos = {model.attrib.vertices[3 * idx],
+                       model.attrib.vertices[3 * idx + 1],
+                       model.attrib.vertices[3 * idx + 2]},
+               .color = {model.attrib.colors[3 * idx],
+                         model.attrib.colors[3 * idx + 1],
+                         model.attrib.colors[3 * idx + 2]},
+               .texCoord = {model.attrib.texcoords[2 * idx],
+                            model.attrib.texcoords[2 * idx + 1]}};
   }
 
-  auto const &mesh = model.shapes[0].mesh;
-  auto numIndices = mesh.indices.size();
-  std::vector<uint32_t> indices(numIndices);
-  for (int idx = 0; idx < numIndices; ++idx)
-    indices[idx] = mesh.indices[idx].vertex_index;
+  std::vector<Vertex> vertices;
+  std::vector<uint32_t> indices;
+
+  std::map<std::tuple<uint32_t, uint32_t, uint32_t>, uint32_t> vertMap;
+
+  for (auto &index : mesh.indices) {
+    uint32_t v = std::max(index.vertex_index, 0),
+             n = std::max(index.normal_index, 0),
+             t = std::max(index.texcoord_index, 0);
+
+    auto mask = std::make_tuple(v, n, t);
+
+    uint32_t realIndex;
+    auto viter = vertMap.find(mask);
+
+    if (viter == vertMap.end()) {
+      realIndex = vertices.size();
+      vertices.push_back(Vertex{.pos = baseVertices[v].pos,
+                                .color = baseVertices[v].color,
+                                .normal = baseVertices[n].normal,
+                                .texCoord = baseVertices[t].texCoord});
+      vertMap[mask] = realIndex;
+    } else {
+      realIndex = viter->second;
+    }
+
+    indices.push_back(realIndex);
+  }
 
   auto verticesSize = sizeof(Vertex) * vertices.size();
   auto indicesSize = sizeof(uint32_t) * indices.size();
@@ -717,7 +748,7 @@ int main() {
     if (!texName.empty())
       texPath = model.root / texName;
     else
-      texPath = "assets/empty.png";
+      texPath = "assets/missing.png";
 
     auto imageFile = StbImage(texPath, STBI_rgb_alpha);
 

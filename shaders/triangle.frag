@@ -29,4 +29,8 @@ layout(location = 0) out vec4 outColor;
 
 void main() {
   outColor = texture(diffuseTex, fragTexCoord);
+  // float mag = 1 + (int(floor(8.0f * fragTexCoord.x)) +
+  //                  int(floor(8.0f * fragTexCoord.y))) %
+  //                     2;
+  // outColor = vec4(0.5f * mag, 0.5f * mag, 0.5f * mag, 1.0f);
 }
