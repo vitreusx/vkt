@@ -109,3 +109,8 @@ auto find_max(Iter begin, Iter end, Key key) {
 }
 
 std::string readFile(std::istream &is);
+
+template <typename T>
+std::shared_ptr<T> stack_ptr(T &value) {
+  return std::shared_ptr<T>(&value, [](void *) -> void {});
+}

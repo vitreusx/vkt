@@ -43,10 +43,12 @@ private:
 class DeviceMemoryMap {
 public:
   DeviceMemoryMap() = default;
-
   DeviceMemoryMap(std::shared_ptr<DeviceMemory> deviceMemory,
                   VkDeviceSize offset = 0,
                   VkDeviceSize size = std::numeric_limits<VkDeviceSize>::max());
+
+  DeviceMemoryMap(DeviceMemoryMap &&other);
+  DeviceMemoryMap &operator=(DeviceMemoryMap &&other);
 
   ~DeviceMemoryMap();
 

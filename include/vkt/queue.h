@@ -34,7 +34,11 @@ public:
 
   void wait();
 
+  uint32_t getQueueFamilyIndex() const;
+  uint32_t getQueueIndex() const;
+
 private:
   std::shared_ptr<Device> device = {};
   VkQueue queue = VK_NULL_HANDLE;
+  uint32_t queueFamilyIndex = 0, queueIndex = 0;
 };

@@ -2,6 +2,7 @@
 #include <vkt/device.h>
 #include <vkt/device_memory.h>
 #include <set>
+#include <vkt/queue.h>
 
 struct ImageCreateInfo {
   VkImageCreateFlags flags;
@@ -34,9 +35,19 @@ public:
 
   operator VkImage();
 
+  VkMemoryRequirements getMemoryRequirements();
+
+  DeviceMemory allocMemory(VkMemoryPropertyFlags properties);
+
+  void stage(void *data, VkDeviceSize size, Queue &transferQueue,
+             VkPipelineStageFlags dstStageMask, VkAccessFlags dstAccessMask,
+             VkImageLayout dstLayout);
+
 private:
   std::shared_ptr<Device> device = {};
   VkImage image = VK_NULL_HANDLE;
+  ImageCreateInfo createInfo = {};
+  VkImageFormatProperties formatProps;
 
   void destroy();
 };

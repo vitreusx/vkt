@@ -1,6 +1,8 @@
 #pragma once
 #include <vkt/device.h>
 #include <set>
+#include <vkt/queue.h>
+#include <vkt/device_memory.h>
 
 struct BufferCreateInfo {
   VkDeviceSize size;
@@ -25,7 +27,10 @@ public:
 
   operator VkBuffer();
 
+  DeviceMemory allocMemory(VkMemoryPropertyFlags properties);
+
   VkMemoryRequirements getMemoryRequirements();
+  void stage(void *data, VkDeviceSize size, Queue &transferQueue);
 
 private:
   std::shared_ptr<Device> device = {};

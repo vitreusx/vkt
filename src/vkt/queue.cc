@@ -3,6 +3,8 @@
 Queue::Queue(std::shared_ptr<Device> device, uint32_t queueFamilyIndex,
              uint32_t queueIndex) {
   this->device = device;
+  this->queueFamilyIndex = queueFamilyIndex;
+  this->queueIndex = queueIndex;
   device->vkGetDeviceQueue(*device, queueFamilyIndex, queueIndex, &queue);
 }
 
@@ -67,4 +69,12 @@ VkResult Queue::present(QueuePresentInfo const &presentInfo) {
 
 void Queue::wait() {
   VK_CHECK(device->vkQueueWaitIdle(queue));
+}
+
+uint32_t Queue::getQueueFamilyIndex() const {
+  return queueFamilyIndex;
+}
+
+uint32_t Queue::getQueueIndex() const {
+  return queueIndex;
 }

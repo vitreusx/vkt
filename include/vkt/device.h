@@ -41,7 +41,7 @@ using DescriptorOp = std::variant<WriteDescriptorSet, CopyDescriptorSet>;
 class Device {
 public:
   Device(VkDevice &&device);
-  Device(std::shared_ptr<Loader> loader, VkPhysicalDevice physicalDevice,
+  Device(std::shared_ptr<Loader> loader, PhysicalDevice physicalDevice,
          DeviceCreateInfo const &deviceCreateInfo);
 
   Device(Device const &) = delete;
@@ -107,11 +107,14 @@ public:
   MACRO(vkGetImageMemoryRequirements);                                         \
   MACRO(vkBindImageMemory);                                                    \
   MACRO(vkCreateSampler);                                                      \
-  MACRO(vkDestroySampler)
+  MACRO(vkDestroySampler);                                                     \
+  MACRO(vkGetBufferMemoryRequirements)
 
 #define MEMBER(name) PFN_##name name
   DEVICE_DEFS(MEMBER);
 #undef MEMBER
+
+  PhysicalDevice physDev;
 
 private:
   std::shared_ptr<Loader> loader = {};

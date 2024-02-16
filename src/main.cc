@@ -147,6 +147,13 @@ public:
   std::vector<ShaderStageCreateInfo> shaderStages;
 };
 
+class Texture {
+public:
+  Texture() = default;
+
+  Texture(std::shared_ptr<Device> device, std::filesystem::path const &path) {}
+};
+
 int main() {
 #ifndef NDEBUG
   spdlog::set_level(spdlog::level::debug);
@@ -338,87 +345,6 @@ int main() {
        presentQueue = Queue(device, deviceInfo.presentQueueIndex, 0),
        transferQueue = Queue(device, deviceInfo.transferQueueIndex, 0);
 
-  auto findMemoryType = [&](uint32_t memoryTypeMask,
-                            VkMemoryPropertyFlags propertyFlags) {
-    for (uint32_t index = 0; index < physicalDevice.memoryProps.memoryTypeCount;
-         ++index) {
-      auto const &memoryType = physicalDevice.memoryProps.memoryTypes[index];
-      if (memoryTypeMask & ((uint32_t)1 << index) == 0)
-        continue;
-      if ((memoryType.propertyFlags & propertyFlags) != propertyFlags)
-        continue;
-      return index;
-    }
-    throw std::runtime_error("Failed to find suitable memory type.");
-  };
-
-  auto findFormat = [&](std::vector<VkFormat> const &candidates,
-                        VkFormatFeatureFlags const &requiredFeatures,
-                        bool optimal = true) -> VkFormat {
-    for (auto format : candidates) {
-      VkFormatProperties props;
-      loader->vkGetPhysicalDeviceFormatProperties(physicalDevice, format,
-                                                  &props);
-
-      if (optimal) {
-        if (props.optimalTilingFeatures & requiredFeatures == requiredFeatures)
-          return format;
-      } else {
-        if (props.linearTilingFeatures & requiredFeatures == requiredFeatures)
-          return format;
-      }
-    }
-
-    throw std::runtime_error("Cannot find proper format.");
-  };
-
-  auto stageToBuffer = [&](VkBuffer dest, void *data, uint32_t nbytes) {
-    auto staging =
-        Buffer(device, {.size = nbytes,
-                        .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-                        .queueFamilyIndices = {deviceInfo.transferQueueIndex}});
-
-    auto memoryReqs = staging.getMemoryRequirements();
-    auto stagingMemory = std::make_shared<DeviceMemory>(
-        device,
-        MemoryAllocateInfo{.size = memoryReqs.size,
-                           .memoryTypeIndex = findMemoryType(
-                               memoryReqs.memoryTypeBits,
-                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)});
-    VK_CHECK(device->vkBindBufferMemory(*device, staging, *stagingMemory, 0));
-
-    auto stagingMemoryMap = DeviceMemoryMap(stagingMemory);
-    std::memcpy(stagingMemoryMap.get(), data, nbytes);
-
-    auto copyCmdBuf = std::make_shared<CommandBuffer>(
-        device, CommandBufferAllocateInfo{
-                    .commandPool = std::make_shared<CommandPool>(
-                        device,
-                        CommandPoolCreateInfo{
-                            .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
-                            .queueFamilyIndex = deviceInfo.transferQueueIndex}),
-                    .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY});
-
-    {
-      auto rec = CommandBufferRecording(
-          copyCmdBuf,
-          CommandBufferBeginInfo{
-              .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT});
-
-      rec.copyBuffer(staging, dest, {VkBufferCopy{.size = nbytes}});
-    }
-
-    transferQueue.submit(QueueSubmitInfo{
-        .waitSemaphoresAndStages = {},
-        .commandBuffers = {(VkCommandBuffer)*copyCmdBuf},
-        .signalSemaphores = {},
-        .fence = VK_NULL_HANDLE,
-    });
-    transferQueue.wait();
-  };
-
   bool framebufferResized = false;
   window.onFramebufferSize = [&](int width, int height) -> void {
     framebufferResized = true;
@@ -544,10 +470,13 @@ int main() {
   createSwapchain();
 
   VkFormat depthFormat =
-      findFormat({VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
-                 VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+      physicalDevice
+          .findSuitableFormat(
+              {VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
+              VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)
+          .value();
 
-  auto depthStencilImage = Image(
+  auto depthImage = Image(
       device,
       ImageCreateInfo{.flags = {},
                       .imageType = VK_IMAGE_TYPE_2D,
@@ -564,22 +493,13 @@ int main() {
                       .queueFamilyIndices = {deviceInfo.graphicsQueueIndex},
                       .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED});
 
-  VkMemoryRequirements depthStencilMemReqs;
-  device->vkGetImageMemoryRequirements(*device, depthStencilImage,
-                                       &depthStencilMemReqs);
+  auto depthImageMemory =
+      depthImage.allocMemory(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-  auto depthStencilMemory = DeviceMemory(
-      device, MemoryAllocateInfo{.size = depthStencilMemReqs.size,
-                                 .memoryTypeIndex = findMemoryType(
-                                     depthStencilMemReqs.memoryTypeBits,
-                                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)});
-
-  device->vkBindImageMemory(*device, depthStencilImage, depthStencilMemory, 0);
-
-  auto depthStencilView = std::make_shared<ImageView>(
+  auto depthImageView = std::make_shared<ImageView>(
       device,
       ImageViewCreateInfo{
-          .image = depthStencilImage,
+          .image = depthImage,
           .viewType = VK_IMAGE_VIEW_TYPE_2D,
           .format = depthFormat,
           .components = VkComponentMapping{.r = VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -752,8 +672,11 @@ int main() {
 
     auto imageFile = StbImage(texPath, STBI_rgb_alpha);
 
-    auto texFormat = findFormat({VK_FORMAT_R8G8B8A8_SRGB},
-                                VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT);
+    auto texFormat =
+        physicalDevice
+            .findSuitableFormat({VK_FORMAT_R8G8B8A8_SRGB},
+                                VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT)
+            .value();
 
     auto imageExtent = VkExtent3D{.width = (uint32_t)imageFile.width,
                                   .height = (uint32_t)imageFile.height,
@@ -775,24 +698,7 @@ int main() {
                                                deviceInfo.transferQueueIndex},
                         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED});
 
-    VkMemoryRequirements memoryReqs;
-    device->vkGetImageMemoryRequirements(*device, tex.image, &memoryReqs);
-    tex.size = memoryReqs.size;
-
-    tex.memory = DeviceMemory(
-        device, MemoryAllocateInfo{.size = memoryReqs.size,
-                                   .memoryTypeIndex = findMemoryType(
-                                       memoryReqs.memoryTypeBits,
-                                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)});
-
-    device->vkBindImageMemory(*device, tex.image, tex.memory, 0);
-
-    auto subresourceRange =
-        VkImageSubresourceRange{.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                                .baseMipLevel = 0,
-                                .levelCount = 1,
-                                .baseArrayLayer = 0,
-                                .layerCount = 1};
+    tex.memory = tex.image.allocMemory(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
     tex.imageView = ImageView(
         device, ImageViewCreateInfo{
@@ -804,98 +710,18 @@ int main() {
                                            .g = VK_COMPONENT_SWIZZLE_IDENTITY,
                                            .b = VK_COMPONENT_SWIZZLE_IDENTITY,
                                            .a = VK_COMPONENT_SWIZZLE_IDENTITY},
-                    .subresourceRange = subresourceRange});
-
-    auto staging = Buffer(
-        device, BufferCreateInfo{
-                    .size = (uint32_t)imageFile.nbytes(),
-                    .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                    .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-                    .queueFamilyIndices = {deviceInfo.transferQueueIndex}});
-
-    memoryReqs = staging.getMemoryRequirements();
-    auto stagingMemory = std::make_shared<DeviceMemory>(
-        device,
-        MemoryAllocateInfo{.size = memoryReqs.size,
-                           .memoryTypeIndex = findMemoryType(
-                               memoryReqs.memoryTypeBits,
-                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)});
-    device->vkBindBufferMemory(*device, staging, *stagingMemory, 0);
-
-    {
-      auto stagingMap = DeviceMemoryMap(stagingMemory);
-      std::memcpy(stagingMap.get(), imageFile.data, imageFile.nbytes());
-    }
-
-    {
-      auto txCmdBuf = std::make_shared<CommandBuffer>(
-          device,
-          CommandBufferAllocateInfo{
-              .commandPool = std::make_shared<CommandPool>(
-                  device,
-                  CommandPoolCreateInfo{
-                      .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
-                      .queueFamilyIndex = deviceInfo.transferQueueIndex}),
-              .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY});
-
-      {
-        auto rec = CommandBufferRecording(
-            txCmdBuf,
-            CommandBufferBeginInfo{
-                .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT});
-
-        rec.pipelineBarrier(DependencyInfo{
-            .srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-            .dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT,
-            .dependencyFlags = {},
-            .imageMemoryBarriers = {VkImageMemoryBarrier{
-                .srcAccessMask = {},
-                .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-                .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-                .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .image = tex.image,
-                .subresourceRange = subresourceRange}}});
-
-        rec.copyBufferToImage(CopyBufferToImageInfo{
-            .srcBuffer = staging,
-            .dstImage = tex.image,
-            .dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            .regions = {VkBufferImageCopy{
-                .bufferOffset = 0,
-                .bufferRowLength = 0,
-                .bufferImageHeight = 0,
-                .imageSubresource =
-                    VkImageSubresourceLayers{.aspectMask =
-                                                 VK_IMAGE_ASPECT_COLOR_BIT,
-                                             .mipLevel = 0,
-                                             .baseArrayLayer = 0,
-                                             .layerCount = 1},
-                .imageOffset = {},
-                .imageExtent = imageExtent}}});
-
-        rec.pipelineBarrier(DependencyInfo{
-            .srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT,
-            .dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-            .dependencyFlags = {},
-            .imageMemoryBarriers = {VkImageMemoryBarrier{
-                .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-                .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-                .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .image = tex.image,
-                .subresourceRange = subresourceRange}}});
-      }
-
-      transferQueue.submit(QueueSubmitInfo{.commandBuffers = {*txCmdBuf}});
-      transferQueue.wait();
-    }
+                    .subresourceRange = VkImageSubresourceRange{
+                        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                        .baseMipLevel = 0,
+                        .levelCount = 1,
+                        .baseArrayLayer = 0,
+                        .layerCount = 1}});
 
     tex.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    tex.image.stage(imageFile.data, imageFile.nbytes(), transferQueue,
+                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                    VK_ACCESS_SHADER_READ_BIT, tex.imageLayout);
 
     tex.sampler = Sampler(
         device, VkSamplerCreateInfo{
@@ -950,17 +776,9 @@ int main() {
                         .sharingMode = VK_SHARING_MODE_CONCURRENT,
                         .queueFamilyIndices = {deviceInfo.graphicsQueueIndex,
                                                deviceInfo.transferQueueIndex}});
-
-    auto memReqs = vkMat.dataBuf.getMemoryRequirements();
-    vkMat.dataBufMemory = DeviceMemory(
-        device,
-        {.size = memReqs.size,
-         .memoryTypeIndex = findMemoryType(
-             memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)});
-    VK_CHECK(device->vkBindBufferMemory(*device, vkMat.dataBuf,
-                                        vkMat.dataBufMemory, 0));
-
-    stageToBuffer(vkMat.dataBuf, &vkMat, sizeof(vkMat));
+    vkMat.dataBufMemory =
+        vkMat.dataBuf.allocMemory(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    vkMat.dataBuf.stage(&vkMat, sizeof(vkMat), transferQueue);
 
     vkMat.texNames = {mat.ambient_texname,  mat.diffuse_texname,
                       mat.specular_texname, mat.specular_highlight_texname,
@@ -978,15 +796,10 @@ int main() {
                                          deviceInfo.transferQueueIndex},
               });
 
-  auto vbMemoryReqs = vertexBuffer->getMemoryRequirements();
-  auto vbMemory = DeviceMemory(
-      device, MemoryAllocateInfo{.size = vbMemoryReqs.size,
-                                 .memoryTypeIndex = findMemoryType(
-                                     vbMemoryReqs.memoryTypeBits,
-                                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)});
-  VK_CHECK(device->vkBindBufferMemory(*device, *vertexBuffer, vbMemory, 0));
-
-  stageToBuffer(*vertexBuffer, vertices.data(), verticesSize);
+  auto vertexBufferMemory =
+      vertexBuffer->allocMemory(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+  vertexBuffer->stage(vertices.data(), vertices.size() * sizeof(vertices[0]),
+                      transferQueue);
 
   auto indexBuffer = std::make_shared<Buffer>(
       device,
@@ -997,15 +810,10 @@ int main() {
                        .queueFamilyIndices = {deviceInfo.graphicsQueueIndex,
                                               deviceInfo.transferQueueIndex}});
 
-  auto ibMemoryReqs = indexBuffer->getMemoryRequirements();
-  auto ibMemory = DeviceMemory(
-      device, MemoryAllocateInfo{.size = ibMemoryReqs.size,
-                                 .memoryTypeIndex = findMemoryType(
-                                     ibMemoryReqs.memoryTypeBits,
-                                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)});
-  VK_CHECK(device->vkBindBufferMemory(*device, *indexBuffer, ibMemory, 0));
-
-  stageToBuffer(*indexBuffer, indices.data(), indicesSize);
+  auto indexBufferMemory =
+      indexBuffer->allocMemory(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+  indexBuffer->stage(indices.data(), indices.size() * sizeof(indices[0]),
+                     transferQueue);
 
   auto pipeline = std::make_shared<GraphicsPipeline>(
       device,
@@ -1065,7 +873,7 @@ int main() {
     for (auto const &imageView : imageViews) {
       auto framebuffer = std::make_shared<Framebuffer>(
           device,
-          FramebufferCreateInfo{.attachments = {imageView, depthStencilView},
+          FramebufferCreateInfo{.attachments = {imageView, depthImageView},
                                 .renderPass = renderPass,
                                 .extent = swapExtent,
                                 .layers = 1});
@@ -1085,6 +893,7 @@ int main() {
     Fence inFlight;
     Semaphore imageAvailable, renderFinished;
     std::shared_ptr<Buffer> unifVsBuffer;
+    std::shared_ptr<DeviceMemory> unifVsMemory;
     DeviceMemoryMap unifVsPtr;
     VkDescriptorSet perFrameSet;
     std::vector<VkDescriptorSet> perMaterialSets;
@@ -1112,18 +921,11 @@ int main() {
                     .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
                     .queueFamilyIndices = {deviceInfo.graphicsQueueIndex}});
 
-    auto unifVsMemReqs = frame.unifVsBuffer->getMemoryRequirements();
-    auto unifVsMemory = std::make_shared<DeviceMemory>(
-        device,
-        MemoryAllocateInfo{.size = unifVsMemReqs.size,
-                           .memoryTypeIndex = findMemoryType(
-                               unifVsMemReqs.memoryTypeBits,
-                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)});
-    VK_CHECK(device->vkBindBufferMemory(*device, *frame.unifVsBuffer,
-                                        *unifVsMemory, 0));
+    frame.unifVsMemory = std::make_shared<DeviceMemory>(
+        frame.unifVsBuffer->allocMemory(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT));
 
-    frame.unifVsPtr = DeviceMemoryMap(unifVsMemory);
+    frame.unifVsPtr = DeviceMemoryMap(frame.unifVsMemory);
 
     frame.perFrameSet = perFrameSets[frameIndex];
     descriptorOps.push_back(WriteDescriptorSet{
@@ -1203,7 +1005,7 @@ int main() {
     }
   };
 
-  glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+  // glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
   glm::vec<2, double> cursorPos;
   window.onCursorPos = [&](double xpos, double ypos) -> void {

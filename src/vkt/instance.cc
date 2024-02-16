@@ -83,7 +83,7 @@ std::vector<PhysicalDevice> Instance::listPhysicalDevices() {
 
   std::vector<PhysicalDevice> physicalDevices;
   for (auto const &vk_physicalDevice : vk_physicalDevices)
-    physicalDevices.emplace_back(*loader, vk_physicalDevice);
+    physicalDevices.emplace_back(loader, vk_physicalDevice);
 
   return physicalDevices;
 }

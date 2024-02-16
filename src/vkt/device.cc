@@ -2,9 +2,10 @@
 
 Device::Device(VkDevice &&device) : device{std::move(device)} {}
 
-Device::Device(std::shared_ptr<Loader> loader, VkPhysicalDevice physicalDevice,
+Device::Device(std::shared_ptr<Loader> loader, PhysicalDevice physicalDevice,
                DeviceCreateInfo const &deviceCreateInfo) {
   this->loader = loader;
+  this->physDev = physicalDevice;
 
   auto vk_queueCreateInfos =
       mapV(deviceCreateInfo.queueCreateInfos,

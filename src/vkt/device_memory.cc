@@ -22,11 +22,13 @@ DeviceMemory::DeviceMemory(DeviceMemory &&other) {
 }
 
 DeviceMemory &DeviceMemory::operator=(DeviceMemory &&other) {
-  destroy();
-  device = std::move(other.device);
-  deviceMemory = other.deviceMemory;
-  other.deviceMemory = VK_NULL_HANDLE;
-  allocationSize = other.allocationSize;
+  if (this != &other) {
+    destroy();
+    device = std::move(other.device);
+    deviceMemory = other.deviceMemory;
+    other.deviceMemory = VK_NULL_HANDLE;
+    allocationSize = other.allocationSize;
+  }
   return *this;
 }
 
@@ -73,4 +75,16 @@ DeviceMemoryMap::~DeviceMemoryMap() {
 
 void *DeviceMemoryMap::get() const {
   return ptr.get();
+}
+
+DeviceMemoryMap::DeviceMemoryMap(DeviceMemoryMap &&other) {
+  *this = std::move(other);
+}
+
+DeviceMemoryMap &DeviceMemoryMap::operator=(DeviceMemoryMap &&other) {
+  if (this != &other) {
+    deviceMemory = std::move(other.deviceMemory);
+    ptr = std::move(other.ptr);
+  }
+  return *this;
 }

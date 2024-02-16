@@ -84,6 +84,7 @@
         "ranges": "cpp",
         "shared_mutex": "cpp",
         "typeindex": "cpp",
-        "filesystem": "cpp"
+        "filesystem": "cpp",
+        "*.ipp": "cpp"
     }
 }
