@@ -16,23 +16,14 @@ public:
   Buffer() = default;
   Buffer(std::shared_ptr<Device> device, BufferCreateInfo const &createInfo);
 
-  Buffer(Buffer const &) = delete;
-  Buffer &operator=(Buffer const &) = delete;
-
-  Buffer(Buffer &&other);
-  Buffer &operator=(Buffer &&other);
-
-  void destroy();
-  ~Buffer();
-
-  operator VkBuffer();
-
   DeviceMemory allocMemory(VkMemoryPropertyFlags properties);
 
   VkMemoryRequirements getMemoryRequirements();
   void stage(void *data, VkDeviceSize size, Queue &transferQueue);
 
+  operator VkBuffer();
+
 private:
   std::shared_ptr<Device> device = {};
-  VkBuffer buffer = VK_NULL_HANDLE;
+  Handle<VkBuffer, Device> buffer = {};
 };

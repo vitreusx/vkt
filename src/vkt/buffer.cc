@@ -25,39 +25,25 @@ Buffer::Buffer(std::shared_ptr<Device> device,
       .queueFamilyIndexCount = (uint32_t)queueFamilyIndices.size(),
       .pQueueFamilyIndices = queueFamilyIndices.data()};
 
+  VkBuffer buffer;
   VK_CHECK(device->vkCreateBuffer(*device, &vk_createInfo, nullptr, &buffer));
+
+  this->buffer = Handle<VkBuffer, Device>(
+      buffer,
+      [](VkBuffer buffer, Device &device) -> void {
+        device.vkDestroyBuffer(device, buffer, nullptr);
+      },
+      device);
 }
 
-Buffer::Buffer(Buffer &&other) {
-  *this = std::move(other);
-}
-
-Buffer &Buffer::operator=(Buffer &&other) {
-  destroy();
-  device = other.device;
-  buffer = other.buffer;
-  other.buffer = VK_NULL_HANDLE;
-  return *this;
-}
-
-Buffer::~Buffer() {
-  destroy();
-}
-
-void Buffer::destroy() {
-  if (buffer != VK_NULL_HANDLE)
-    device->vkDestroyBuffer(*device, buffer, nullptr);
-  buffer = VK_NULL_HANDLE;
+Buffer::operator VkBuffer() {
+  return buffer;
 }
 
 VkMemoryRequirements Buffer::getMemoryRequirements() {
   VkMemoryRequirements memRequirements = {};
   device->vkGetBufferMemoryRequirements(*device, buffer, &memRequirements);
   return memRequirements;
-}
-
-Buffer::operator VkBuffer() {
-  return buffer;
 }
 
 void Buffer::stage(void *data, VkDeviceSize size, Queue &transferQueue) {

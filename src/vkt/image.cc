@@ -34,35 +34,19 @@ Image::Image(std::shared_ptr<Device> device,
       .initialLayout = createInfo.initialLayout,
   };
 
+  VkImage image;
   VK_CHECK(device->vkCreateImage(*device, &vk_createInfo, nullptr, &image));
+
+  this->image = Handle<VkImage, Device>(
+      image,
+      [](VkImage image, Device &device) -> void {
+        device.vkDestroyImage(device, image, nullptr);
+      },
+      device);
 
   vkGetPhysicalDeviceImageFormatProperties(
       device->physDev, createInfo.format, createInfo.imageType,
       createInfo.tiling, createInfo.usage, createInfo.flags, &formatProps);
-}
-
-Image::Image(Image &&other) {
-  *this = std::move(other);
-}
-
-Image &Image::operator=(Image &&other) {
-  destroy();
-  device = std::move(other.device);
-  createInfo = std::move(other.createInfo);
-  formatProps = std::move(other.formatProps);
-  image = other.image;
-  other.image = VK_NULL_HANDLE;
-  return *this;
-}
-
-Image::~Image() {
-  destroy();
-}
-
-void Image::destroy() {
-  if (image != VK_NULL_HANDLE)
-    device->vkDestroyImage(*device, image, nullptr);
-  image = VK_NULL_HANDLE;
 }
 
 Image::operator VkImage() {

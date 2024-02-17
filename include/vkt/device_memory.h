@@ -13,17 +13,8 @@ class DeviceMemoryMap;
 class DeviceMemory {
 public:
   DeviceMemory() = default;
-
   DeviceMemory(std::shared_ptr<Device> device,
                MemoryAllocateInfo const &allocInfo);
-
-  DeviceMemory(DeviceMemory const &) = delete;
-  DeviceMemory &operator=(DeviceMemory const &) = delete;
-
-  DeviceMemory(DeviceMemory &&other);
-  DeviceMemory &operator=(DeviceMemory &&other);
-
-  ~DeviceMemory();
 
   operator VkDeviceMemory();
 
@@ -31,10 +22,8 @@ private:
   friend class DeviceMemoryMap;
 
   std::shared_ptr<Device> device = {};
-  VkDeviceMemory deviceMemory = VK_NULL_HANDLE;
+  Handle<VkDeviceMemory, Device> deviceMemory = {};
   VkDeviceSize allocationSize = 0;
-
-  void destroy();
 
   std::weak_ptr<void> memoryMap;
   void unmapMemory();

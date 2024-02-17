@@ -12,30 +12,16 @@ DescriptorPool::DescriptorPool(std::shared_ptr<Device> device,
       .poolSizeCount = (uint32_t)createInfo.poolSizes.size(),
       .pPoolSizes = createInfo.poolSizes.data()};
 
+  VkDescriptorPool descriptorPool;
   VK_CHECK(device->vkCreateDescriptorPool(*device, &vk_createInfo, nullptr,
                                           &descriptorPool));
-}
 
-DescriptorPool::DescriptorPool(DescriptorPool &&other) {
-  *this = std::move(other);
-}
-
-DescriptorPool &DescriptorPool::operator=(DescriptorPool &&other) {
-  destroy();
-  device = std::move(other.device);
-  descriptorPool = other.descriptorPool;
-  other.descriptorPool = VK_NULL_HANDLE;
-  return *this;
-}
-
-DescriptorPool::~DescriptorPool() {
-  destroy();
-}
-
-void DescriptorPool::destroy() {
-  if (descriptorPool != VK_NULL_HANDLE)
-    device->vkDestroyDescriptorPool(*device, descriptorPool, nullptr);
-  descriptorPool = VK_NULL_HANDLE;
+  this->descriptorPool = Handle<VkDescriptorPool, Device>(
+      descriptorPool,
+      [](VkDescriptorPool descriptorPool, Device &device) -> void {
+        device.vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+      },
+      device);
 }
 
 DescriptorPool::operator VkDescriptorPool() {

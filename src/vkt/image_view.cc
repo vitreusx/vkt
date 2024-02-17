@@ -3,7 +3,7 @@
 ImageView::ImageView(std::shared_ptr<Device> device,
                      ImageViewCreateInfo imageViewCreateInfo) {
   this->device = device;
-  auto vk_imageViewCreateInfo = VkImageViewCreateInfo{
+  auto vk_createInfo = VkImageViewCreateInfo{
       .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
       .pNext = VK_NULL_HANDLE,
       .flags = imageViewCreateInfo.flags,
@@ -13,32 +13,16 @@ ImageView::ImageView(std::shared_ptr<Device> device,
       .components = imageViewCreateInfo.components,
       .subresourceRange = imageViewCreateInfo.subresourceRange};
 
-  VK_CHECK(device->vkCreateImageView(*device, &vk_imageViewCreateInfo,
-                                     VK_NULL_HANDLE, &imageView));
-}
+  VkImageView imageView;
+  VK_CHECK(
+      device->vkCreateImageView(*device, &vk_createInfo, nullptr, &imageView));
 
-ImageView::ImageView(ImageView &&other) {
-  device = other.device;
-  imageView = other.imageView;
-  other.imageView = VK_NULL_HANDLE;
-}
-
-ImageView &ImageView::operator=(ImageView &&other) {
-  destroy();
-  device = other.device;
-  imageView = other.imageView;
-  other.imageView = VK_NULL_HANDLE;
-  return *this;
-}
-
-ImageView::~ImageView() {
-  destroy();
-}
-
-void ImageView::destroy() {
-  if (imageView != VK_NULL_HANDLE)
-    device->vkDestroyImageView(*device, imageView, VK_NULL_HANDLE);
-  imageView = VK_NULL_HANDLE;
+  this->imageView = Handle<VkImageView, Device>(
+      imageView,
+      [](VkImageView imageView, Device &device) -> void {
+        device.vkDestroyImageView(device, imageView, nullptr);
+      },
+      device);
 }
 
 ImageView::operator VkImageView() {

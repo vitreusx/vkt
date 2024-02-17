@@ -10,30 +10,16 @@ CommandPool::CommandPool(std::shared_ptr<Device> device,
       .flags = createInfo.flags,
       .queueFamilyIndex = createInfo.queueFamilyIndex};
 
+  VkCommandPool commandPool;
   VK_CHECK(device->vkCreateCommandPool(*device, &vk_createInfo, nullptr,
                                        &commandPool));
-}
 
-CommandPool::CommandPool(CommandPool &&other) {
-  *this = std::move(other);
-}
-
-CommandPool &CommandPool::operator=(CommandPool &&other) {
-  destroy();
-  device = std::move(other.device);
-  commandPool = other.commandPool;
-  other.commandPool = VK_NULL_HANDLE;
-  return *this;
-}
-
-CommandPool::~CommandPool() {
-  destroy();
-}
-
-void CommandPool::destroy() {
-  if (commandPool != VK_NULL_HANDLE)
-    device->vkDestroyCommandPool(*device, commandPool, nullptr);
-  commandPool = VK_NULL_HANDLE;
+  this->commandPool = Handle<VkCommandPool, Device>(
+      commandPool,
+      [](VkCommandPool commandPool, Device &device) -> void {
+        device.vkDestroyCommandPool(device, commandPool, nullptr);
+      },
+      device);
 }
 
 CommandPool::operator VkCommandPool() {

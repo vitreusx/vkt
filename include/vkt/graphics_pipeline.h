@@ -97,12 +97,6 @@ public:
   GraphicsPipeline(std::shared_ptr<Device> device,
                    GraphicsPipelineCreateInfo const &createInfo);
 
-  GraphicsPipeline(GraphicsPipeline const &) = delete;
-  GraphicsPipeline &operator=(GraphicsPipeline const &) = delete;
-
-  GraphicsPipeline(GraphicsPipeline &&other) = default;
-  GraphicsPipeline &operator=(GraphicsPipeline &&other) = default;
-
 private:
   std::shared_ptr<PipelineLayout> pipelineLayout = {};
   std::shared_ptr<RenderPass> renderPass = {};

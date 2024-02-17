@@ -21,19 +21,11 @@ public:
   RenderPass(std::shared_ptr<Device> device,
              RenderPassCreateInfo const &createInfo);
 
-  RenderPass(RenderPass const &) = delete;
-  RenderPass &operator=(RenderPass const &) = delete;
-
-  RenderPass(RenderPass &&other);
-  RenderPass &operator=(RenderPass &&other);
-
-  ~RenderPass();
-
   operator VkRenderPass();
 
 private:
   std::shared_ptr<Device> device = {};
-  VkRenderPass renderPass = VK_NULL_HANDLE;
+  Handle<VkRenderPass, Device> renderPass;
 
   void destroy();
 };

@@ -25,14 +25,6 @@ public:
 
   Image(std::shared_ptr<Device> device, ImageCreateInfo const &createInfo);
 
-  Image(Image const &) = delete;
-  Image &operator=(Image const &) = delete;
-
-  Image(Image &&other);
-  Image &operator=(Image &&other);
-
-  ~Image();
-
   operator VkImage();
 
   VkMemoryRequirements getMemoryRequirements();
@@ -45,9 +37,7 @@ public:
 
 private:
   std::shared_ptr<Device> device = {};
-  VkImage image = VK_NULL_HANDLE;
+  Handle<VkImage, Device> image;
   ImageCreateInfo createInfo = {};
   VkImageFormatProperties formatProps;
-
-  void destroy();
 };

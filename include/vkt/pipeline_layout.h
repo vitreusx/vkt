@@ -8,23 +8,13 @@ struct PipelineLayoutCreateInfo {
 
 class PipelineLayout {
 public:
+  PipelineLayout() = default;
   PipelineLayout(std::shared_ptr<Device> device,
                  PipelineLayoutCreateInfo createInfo);
-
-  PipelineLayout(PipelineLayout const &) = delete;
-  PipelineLayout &operator=(PipelineLayout const &) = delete;
-
-  PipelineLayout(PipelineLayout &&other);
-
-  PipelineLayout &operator=(PipelineLayout &&other);
-
-  ~PipelineLayout();
-
-  void destroy();
 
   operator VkPipelineLayout();
 
 private:
   std::shared_ptr<Device> device = {};
-  VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+  Handle<VkPipelineLayout, Device> pipelineLayout;
 };

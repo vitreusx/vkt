@@ -17,14 +17,6 @@ public:
   DescriptorPool(std::shared_ptr<Device> device,
                  DescriptorPoolCreateInfo const &createInfo);
 
-  DescriptorPool(DescriptorPool const &) = delete;
-  DescriptorPool &operator=(DescriptorPool const &) = delete;
-
-  DescriptorPool(DescriptorPool &&);
-  DescriptorPool &operator=(DescriptorPool &&);
-
-  ~DescriptorPool();
-
   operator VkDescriptorPool();
 
   std::vector<VkDescriptorSet>
@@ -32,7 +24,5 @@ public:
 
 private:
   std::shared_ptr<Device> device = {};
-  VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
-
-  void destroy();
+  Handle<VkDescriptorPool, Device> descriptorPool;
 };

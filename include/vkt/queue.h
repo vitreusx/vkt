@@ -20,8 +20,8 @@ public:
   Queue(std::shared_ptr<Device> device, uint32_t queueFamilyIndex,
         uint32_t queueIndex);
 
-  Queue(Queue const &) = delete;
-  Queue &operator=(Queue const &) = delete;
+  Queue(Queue const &) = default;
+  Queue &operator=(Queue const &) = default;
 
   Queue(Queue &&other);
   Queue &operator=(Queue &&other);

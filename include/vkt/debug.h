@@ -6,17 +6,9 @@ public:
   DebugMessenger(std::shared_ptr<Instance> instance,
                  DebugMessengerCreateInfo debugMessengerCreateInfo);
 
-  DebugMessenger(DebugMessenger const &) = delete;
-  DebugMessenger &operator=(DebugMessenger const &) = delete;
-
-  DebugMessenger(DebugMessenger &&) = delete;
-  DebugMessenger &operator=(DebugMessenger &&) = delete;
-
-  ~DebugMessenger();
-
 private:
   std::shared_ptr<Instance> instance;
-  VkDebugUtilsMessengerEXT messenger;
+  Handle<VkDebugUtilsMessengerEXT, Instance> messenger;
   DebugMessengerCreateInfo debugMessengerCreateInfo;
 
   static VkBool32

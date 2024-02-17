@@ -22,32 +22,16 @@ Framebuffer::Framebuffer(std::shared_ptr<Device> device,
       .height = createInfo.extent.height,
       .layers = createInfo.layers};
 
+  VkFramebuffer framebuffer;
   VK_CHECK(device->vkCreateFramebuffer(*device, &vk_createInfo, nullptr,
                                        &framebuffer));
-}
 
-Framebuffer::Framebuffer(Framebuffer &&other) {
-  *this = std::move(other);
-}
-
-Framebuffer &Framebuffer::operator=(Framebuffer &&other) {
-  destroy();
-  device = std::move(other.device);
-  renderPass = std::move(other.renderPass);
-  attachments = std::move(other.attachments);
-  framebuffer = other.framebuffer;
-  other.framebuffer = VK_NULL_HANDLE;
-  return *this;
-}
-
-Framebuffer::~Framebuffer() {
-  destroy();
-}
-
-void Framebuffer::destroy() {
-  if (framebuffer != VK_NULL_HANDLE)
-    device->vkDestroyFramebuffer(*device, framebuffer, nullptr);
-  framebuffer = VK_NULL_HANDLE;
+  this->framebuffer = Handle<VkFramebuffer, Device>(
+      framebuffer,
+      [](VkFramebuffer framebuffer, Device &device) -> void {
+        device.vkDestroyFramebuffer(device, framebuffer, nullptr);
+      },
+      device);
 }
 
 Framebuffer::operator VkFramebuffer() {

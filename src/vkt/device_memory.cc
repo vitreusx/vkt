@@ -13,38 +13,20 @@ DeviceMemory::DeviceMemory(std::shared_ptr<Device> device,
                            .allocationSize = allocInfo.size,
                            .memoryTypeIndex = allocInfo.memoryTypeIndex};
 
+  VkDeviceMemory deviceMemory;
   VK_CHECK(
       device->vkAllocateMemory(*device, &vk_allocInfo, nullptr, &deviceMemory));
-}
 
-DeviceMemory::DeviceMemory(DeviceMemory &&other) {
-  *this = std::move(other);
-}
-
-DeviceMemory &DeviceMemory::operator=(DeviceMemory &&other) {
-  if (this != &other) {
-    destroy();
-    device = std::move(other.device);
-    deviceMemory = other.deviceMemory;
-    other.deviceMemory = VK_NULL_HANDLE;
-    allocationSize = other.allocationSize;
-  }
-  return *this;
-}
-
-DeviceMemory::~DeviceMemory() {
-  destroy();
+  this->deviceMemory = Handle<VkDeviceMemory, Device>(
+      deviceMemory,
+      [](VkDeviceMemory deviceMemory, Device &device) -> void {
+        device.vkFreeMemory(device, deviceMemory, nullptr);
+      },
+      device);
 }
 
 DeviceMemory::operator VkDeviceMemory() {
   return deviceMemory;
-}
-
-void DeviceMemory::destroy() {
-  if (deviceMemory != VK_NULL_HANDLE) {
-    device->vkFreeMemory(*device, deviceMemory, nullptr);
-  }
-  deviceMemory = VK_NULL_HANDLE;
 }
 
 void DeviceMemory::unmapMemory() {

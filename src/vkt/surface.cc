@@ -3,30 +3,16 @@
 Surface::Surface(std::shared_ptr<Instance> instance, Window &window) {
   this->instance = instance;
   loader = instance->loader;
+
+  VkSurfaceKHR surfaceKHR;
   glfwCreateWindowSurface(*instance, window, VK_NULL_HANDLE, &surfaceKHR);
-}
 
-Surface::Surface(Surface &&other) {
-  *this = std::move(other);
-}
-
-Surface &Surface::operator=(Surface &&other) {
-  destroy();
-  this->instance = std::move(other.instance);
-  this->loader = std::move(other.loader);
-  surfaceKHR = other.surfaceKHR;
-  other.surfaceKHR = VK_NULL_HANDLE;
-  return *this;
-}
-
-Surface::~Surface() {
-  destroy();
-}
-
-void Surface::destroy() {
-  if (surfaceKHR != VK_NULL_HANDLE)
-    instance->vkDestroySurfaceKHR(*instance, surfaceKHR, VK_NULL_HANDLE);
-  surfaceKHR = VK_NULL_HANDLE;
+  this->surfaceKHR = Handle<VkSurfaceKHR, Instance>(
+      surfaceKHR,
+      [](VkSurfaceKHR surfaceKHR, Instance &instance) -> void {
+        instance.vkDestroySurfaceKHR(instance, surfaceKHR, nullptr);
+      },
+      instance);
 }
 
 Surface::operator VkSurfaceKHR() {

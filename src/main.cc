@@ -369,9 +369,13 @@ int main() {
   Swapchain swapchain;
   std::vector<VkImage> images;
   std::vector<std::shared_ptr<ImageView>> imageViews;
+  Image depthImage;
+  DeviceMemory depthImageMemory;
+  std::shared_ptr<ImageView> depthImageView;
   VkExtent2D swapExtent;
   SwapchainCreateInfo swapchainInfo;
   std::vector<std::shared_ptr<Framebuffer>> framebuffers;
+  VkFormat depthFormat;
 
   auto createSwapchain = [&]() -> void {
     vkDeviceWaitIdle(*device);
@@ -465,54 +469,54 @@ int main() {
                   .baseArrayLayer = 0,
                   .layerCount = 1}}));
     }
-  };
 
-  createSwapchain();
+    depthFormat =
+        physicalDevice
+            .findSuitableFormat(
+                {VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
+                VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)
+            .value();
 
-  VkFormat depthFormat =
-      physicalDevice
-          .findSuitableFormat(
-              {VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
-              VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)
-          .value();
+    depthImage = Image(
+        device,
+        ImageCreateInfo{.flags = {},
+                        .imageType = VK_IMAGE_TYPE_2D,
+                        .format = depthFormat,
+                        .extent = VkExtent3D{.width = swapExtent.width,
+                                             .height = swapExtent.height,
+                                             .depth = 1},
+                        .mipLevels = 1,
+                        .arrayLayers = 1,
+                        .samples = VK_SAMPLE_COUNT_1_BIT,
+                        .tiling = VK_IMAGE_TILING_OPTIMAL,
+                        .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+                        .queueFamilyIndices = {deviceInfo.graphicsQueueIndex},
+                        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED});
 
-  auto depthImage = Image(
-      device,
-      ImageCreateInfo{.flags = {},
-                      .imageType = VK_IMAGE_TYPE_2D,
-                      .format = depthFormat,
-                      .extent = VkExtent3D{.width = swapExtent.width,
-                                           .height = swapExtent.height,
-                                           .depth = 1},
-                      .mipLevels = 1,
-                      .arrayLayers = 1,
-                      .samples = VK_SAMPLE_COUNT_1_BIT,
-                      .tiling = VK_IMAGE_TILING_OPTIMAL,
-                      .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-                      .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-                      .queueFamilyIndices = {deviceInfo.graphicsQueueIndex},
-                      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED});
+    depthImageMemory =
+        depthImage.allocMemory(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-  auto depthImageMemory =
-      depthImage.allocMemory(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-  auto depthImageView = std::make_shared<ImageView>(
-      device,
-      ImageViewCreateInfo{
-          .image = depthImage,
-          .viewType = VK_IMAGE_VIEW_TYPE_2D,
-          .format = depthFormat,
-          .components = VkComponentMapping{.r = VK_COMPONENT_SWIZZLE_IDENTITY,
+    depthImageView = std::make_shared<ImageView>(
+        device, ImageViewCreateInfo{
+                    .image = depthImage,
+                    .viewType = VK_IMAGE_VIEW_TYPE_2D,
+                    .format = depthFormat,
+                    .components =
+                        VkComponentMapping{.r = VK_COMPONENT_SWIZZLE_IDENTITY,
                                            .g = VK_COMPONENT_SWIZZLE_IDENTITY,
                                            .b = VK_COMPONENT_SWIZZLE_IDENTITY,
                                            .a = VK_COMPONENT_SWIZZLE_IDENTITY},
-          .subresourceRange =
-              VkImageSubresourceRange{.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT |
-                                                    VK_IMAGE_ASPECT_STENCIL_BIT,
-                                      .baseMipLevel = 0,
-                                      .levelCount = 1,
-                                      .baseArrayLayer = 0,
-                                      .layerCount = 1}});
+                    .subresourceRange = VkImageSubresourceRange{
+                        .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT |
+                                      VK_IMAGE_ASPECT_STENCIL_BIT,
+                        .baseMipLevel = 0,
+                        .levelCount = 1,
+                        .baseArrayLayer = 0,
+                        .layerCount = 1}});
+  };
+
+  createSwapchain();
 
   auto renderPass = std::make_shared<RenderPass>(
       device,
@@ -778,7 +782,7 @@ int main() {
                                                deviceInfo.transferQueueIndex}});
     vkMat.dataBufMemory =
         vkMat.dataBuf.allocMemory(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    vkMat.dataBuf.stage(&vkMat, sizeof(vkMat), transferQueue);
+    vkMat.dataBuf.stage(&matData, sizeof(matData), transferQueue);
 
     vkMat.texNames = {mat.ambient_texname,  mat.diffuse_texname,
                       mat.specular_texname, mat.specular_highlight_texname,

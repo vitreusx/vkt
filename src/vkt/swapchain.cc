@@ -4,7 +4,7 @@ Swapchain::Swapchain(std::shared_ptr<Device> device,
                      SwapchainCreateInfo const &swapchainCreateInfo) {
   this->device = device;
   auto const &info = swapchainCreateInfo;
-  auto vk_swapchainCreateInfo = VkSwapchainCreateInfoKHR{
+  auto vk_createInfo = VkSwapchainCreateInfoKHR{
       .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
       .pNext = VK_NULL_HANDLE,
       .flags = info.flags,
@@ -24,30 +24,16 @@ Swapchain::Swapchain(std::shared_ptr<Device> device,
       .clipped = info.clipped,
       .oldSwapchain = info.oldSwapchain};
 
-  VK_CHECK(device->vkCreateSwapchainKHR(*device, &vk_swapchainCreateInfo,
-                                        VK_NULL_HANDLE, &swapchain));
-}
+  VkSwapchainKHR swapchain;
+  VK_CHECK(device->vkCreateSwapchainKHR(*device, &vk_createInfo, nullptr,
+                                        &swapchain));
 
-Swapchain::Swapchain(Swapchain &&other) {
-  *this = std::move(other);
-}
-
-Swapchain &Swapchain::operator=(Swapchain &&other) {
-  destroy();
-  device = other.device;
-  swapchain = other.swapchain;
-  other.swapchain = VK_NULL_HANDLE;
-  return *this;
-}
-
-Swapchain::~Swapchain() {
-  destroy();
-}
-
-void Swapchain::destroy() {
-  if (swapchain != VK_NULL_HANDLE)
-    device->vkDestroySwapchainKHR(*device, swapchain, VK_NULL_HANDLE);
-  swapchain = VK_NULL_HANDLE;
+  this->swapchain = Handle<VkSwapchainKHR, Device>(
+      swapchain,
+      [](VkSwapchainKHR swapchain, Device &device) -> void {
+        device.vkDestroySwapchainKHR(device, swapchain, nullptr);
+      },
+      device);
 }
 
 std::vector<VkImage> Swapchain::getImages() {

@@ -15,15 +15,19 @@ DebugMessenger::DebugMessenger(
       .pfnUserCallback = _pfnUserCallback,
       .pUserData = this};
 
-  instance->vkCreateDebugUtilsMessengerEXT(
-      *instance, &vk_debugMessengerCreateInfo, VK_NULL_HANDLE, &messenger);
-}
+  VkDebugUtilsMessengerEXT debugUtilsMessengerEXT;
+  VK_CHECK(instance->vkCreateDebugUtilsMessengerEXT(
+      *instance, &vk_debugMessengerCreateInfo, nullptr,
+      &debugUtilsMessengerEXT));
 
-DebugMessenger::~DebugMessenger() {
-  if (messenger)
-    instance->vkDestroyDebugUtilsMessengerEXT(*instance, messenger,
-                                              VK_NULL_HANDLE);
-  messenger = VK_NULL_HANDLE;
+  this->messenger = Handle<VkDebugUtilsMessengerEXT, Instance>(
+      debugUtilsMessengerEXT,
+      [](VkDebugUtilsMessengerEXT debugUtilsMessengerEXT,
+         Instance &instance) -> void {
+        instance.vkDestroyDebugUtilsMessengerEXT(
+            instance, debugUtilsMessengerEXT, nullptr);
+      },
+      instance);
 }
 
 VkBool32 DebugMessenger::_pfnUserCallback(

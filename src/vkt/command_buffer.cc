@@ -3,7 +3,6 @@
 CommandBuffer::CommandBuffer(std::shared_ptr<Device> device,
                              CommandBufferAllocateInfo allocInfo) {
   this->device = device;
-  this->commandPool = allocInfo.commandPool;
 
   VkCommandBufferAllocateInfo vk_allocInfo{
       .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -13,16 +12,19 @@ CommandBuffer::CommandBuffer(std::shared_ptr<Device> device,
       .commandBufferCount = 1,
   };
 
+  VkCommandBuffer commandBuffer;
   VK_CHECK(
       device->vkAllocateCommandBuffers(*device, &vk_allocInfo, &commandBuffer));
 
-  loadFunctions();
-}
+  this->commandBuffer = Handle<VkCommandBuffer, Device, CommandPool>(
+      commandBuffer,
+      [](VkCommandBuffer commandBuffer, Device &device,
+         CommandPool &commandPool) -> void {
+        device.vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+      },
+      device, allocInfo.commandPool);
 
-CommandBuffer::~CommandBuffer() {
-  if (commandBuffer != VK_NULL_HANDLE)
-    device->vkFreeCommandBuffers(*device, *commandPool, 1, &commandBuffer);
-  commandBuffer = VK_NULL_HANDLE;
+  loadFunctions();
 }
 
 CommandBuffer::operator VkCommandBuffer() {

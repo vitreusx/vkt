@@ -1,7 +1,5 @@
 #include <vkt/device.h>
 
-Device::Device(VkDevice &&device) : device{std::move(device)} {}
-
 Device::Device(std::shared_ptr<Loader> loader, PhysicalDevice physicalDevice,
                DeviceCreateInfo const &deviceCreateInfo) {
   this->loader = loader;
@@ -34,16 +32,18 @@ Device::Device(std::shared_ptr<Loader> loader, PhysicalDevice physicalDevice,
       .ppEnabledExtensionNames = extNames.data(),
       .pEnabledFeatures = &deviceCreateInfo.enabledFeatures};
 
-  VK_CHECK(loader->vkCreateDevice(physicalDevice, &vk_deviceCreateInfo,
-                                  VK_NULL_HANDLE, &device));
+  VkDevice device;
+  VK_CHECK(loader->vkCreateDevice(physicalDevice, &vk_deviceCreateInfo, nullptr,
+                                  &device));
+
+  this->device = Handle<VkDevice, Loader>(
+      device,
+      [](VkDevice device, Loader &loader) -> void {
+        loader.vkDestroyDevice(device, nullptr);
+      },
+      loader);
 
   loadFunctions();
-}
-
-Device::~Device() {
-  if (device != VK_NULL_HANDLE)
-    loader->vkDestroyDevice(device, VK_NULL_HANDLE);
-  device = VK_NULL_HANDLE;
 }
 
 Device::operator VkDevice() {

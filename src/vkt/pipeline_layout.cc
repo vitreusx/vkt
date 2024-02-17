@@ -12,30 +12,16 @@ PipelineLayout::PipelineLayout(std::shared_ptr<Device> device,
       .pushConstantRangeCount = (uint32_t)createInfo.pushConstantRanges.size(),
       .pPushConstantRanges = createInfo.pushConstantRanges.data()};
 
-  VK_CHECK(device->vkCreatePipelineLayout(*device, &vk_createInfo,
-                                          VK_NULL_HANDLE, &pipelineLayout));
-}
+  VkPipelineLayout pipelineLayout;
+  VK_CHECK(device->vkCreatePipelineLayout(*device, &vk_createInfo, nullptr,
+                                          &pipelineLayout));
 
-PipelineLayout::PipelineLayout(PipelineLayout &&other) {
-  *this = std::move(other);
-}
-
-PipelineLayout &PipelineLayout::operator=(PipelineLayout &&other) {
-  destroy();
-  device = std::move(other.device);
-  pipelineLayout = other.pipelineLayout;
-  other.pipelineLayout = VK_NULL_HANDLE;
-  return *this;
-}
-
-PipelineLayout::~PipelineLayout() {
-  destroy();
-}
-
-void PipelineLayout::destroy() {
-  if (pipelineLayout != VK_NULL_HANDLE)
-    device->vkDestroyPipelineLayout(*device, pipelineLayout, VK_NULL_HANDLE);
-  pipelineLayout = VK_NULL_HANDLE;
+  this->pipelineLayout = Handle<VkPipelineLayout, Device>(
+      pipelineLayout,
+      [](VkPipelineLayout pipelineLayout, Device &device) -> void {
+        device.vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+      },
+      device);
 }
 
 PipelineLayout::operator VkPipelineLayout() {

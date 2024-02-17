@@ -26,14 +26,6 @@ public:
   Swapchain(std::shared_ptr<Device> device,
             SwapchainCreateInfo const &swapchainCreateInfo);
 
-  Swapchain(Swapchain const &) = delete;
-  Swapchain &operator=(Swapchain const &) = delete;
-
-  Swapchain(Swapchain &&other);
-  Swapchain &operator=(Swapchain &&other);
-
-  ~Swapchain();
-
   std::vector<VkImage> getImages();
 
   std::pair<uint32_t, VkResult> acquireNextImage(VkSemaphore semaphore,
@@ -43,7 +35,5 @@ public:
 
 private:
   std::shared_ptr<Device> device = {};
-  VkSwapchainKHR swapchain = VK_NULL_HANDLE;
-
-  void destroy();
+  Handle<VkSwapchainKHR, Device> swapchain;
 };

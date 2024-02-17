@@ -12,31 +12,17 @@ DescriptorSetLayout::DescriptorSetLayout(
       .bindingCount = (uint32_t)createInfo.bindings.size(),
       .pBindings = createInfo.bindings.data()};
 
+  VkDescriptorSetLayout descriptorSetLayout;
   VK_CHECK(device->vkCreateDescriptorSetLayout(*device, &vk_createInfo, nullptr,
                                                &descriptorSetLayout));
-}
 
-DescriptorSetLayout::DescriptorSetLayout(DescriptorSetLayout &&other) {
-  *this = std::move(other);
-}
-
-DescriptorSetLayout &
-DescriptorSetLayout::operator=(DescriptorSetLayout &&other) {
-  destroy();
-  device = std::move(other.device);
-  descriptorSetLayout = other.descriptorSetLayout;
-  other.descriptorSetLayout = VK_NULL_HANDLE;
-  return *this;
-}
-
-DescriptorSetLayout::~DescriptorSetLayout() {
-  destroy();
-}
-
-void DescriptorSetLayout::destroy() {
-  if (descriptorSetLayout != VK_NULL_HANDLE)
-    device->vkDestroyDescriptorSetLayout(*device, descriptorSetLayout, nullptr);
-  descriptorSetLayout = VK_NULL_HANDLE;
+  this->descriptorSetLayout = Handle<VkDescriptorSetLayout, Device>(
+      descriptorSetLayout,
+      [](VkDescriptorSetLayout descriptorSetLayout, Device &device) -> void {
+        device.vkDestroyDescriptorSetLayout(device, descriptorSetLayout,
+                                            nullptr);
+      },
+      device);
 }
 
 DescriptorSetLayout::operator VkDescriptorSetLayout() {

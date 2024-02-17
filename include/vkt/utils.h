@@ -6,6 +6,8 @@
 #include <vector>
 #include <vulkan/vk_enum_string_helper.h>
 #include <sstream>
+#include <iostream>
+#include <functional>
 
 template <typename _Res, typename... _ArgTypes>
 class ICallback {
@@ -114,3 +116,63 @@ template <typename T>
 std::shared_ptr<T> stack_ptr(T &value) {
   return std::shared_ptr<T>(&value, [](void *) -> void {});
 }
+
+template <typename T, typename... Refs>
+class Handle {
+public:
+  Handle() = default;
+
+  using Deleter = std::function<void(T, Refs &...)>;
+
+  Handle(T value, Deleter deleter, std::shared_ptr<Refs>... refs)
+      : value{std::move(value)}, deleter{std::move(deleter)},
+        refs{std::make_tuple(std::move(refs)...)} {}
+
+  Handle(Handle const &) = delete;
+  Handle &operator=(Handle const &) = delete;
+
+  Handle(Handle &&other) {
+    *this = std::move(other);
+  }
+
+  Handle &operator=(Handle &&other) {
+    if (this != &other) {
+      destroy();
+      value = std::move(other.value);
+      other.value = {};
+      refs = std::move(other.refs);
+      deleter = std::move(other.deleter);
+    }
+    return *this;
+  }
+
+  ~Handle() {
+    destroy();
+  }
+
+  operator T &() {
+    return value;
+  }
+
+  operator T const &() const {
+    return value;
+  }
+
+protected:
+  T value = {};
+  std::tuple<std::shared_ptr<Refs>...> refs;
+  Deleter deleter = [](T value, Refs &...refs) -> void {};
+
+private:
+  void destroy() {
+    _destroy(
+        std::make_index_sequence<std::tuple_size_v<std::tuple<Refs...>>>{});
+  }
+
+  template <std::size_t... I>
+  void _destroy(std::index_sequence<I...>) {
+    if (value != T())
+      deleter(value, *std::get<I>(refs)...);
+    value = {};
+  }
+};

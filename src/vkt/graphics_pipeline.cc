@@ -177,6 +177,15 @@ GraphicsPipeline::GraphicsPipeline(
       .basePipelineHandle = VK_NULL_HANDLE,
       .basePipelineIndex = -1};
 
-  VK_CHECK(device->vkCreateGraphicsPipelines(
-      *device, VK_NULL_HANDLE, 1, &vk_createInfo, VK_NULL_HANDLE, &pipeline));
+  VkPipeline pipeline;
+  VK_CHECK(device->vkCreateGraphicsPipelines(*device, VK_NULL_HANDLE, 1,
+                                             &vk_createInfo, VK_NULL_HANDLE,
+                                             &(VkPipeline &)pipeline));
+
+  this->pipeline = Handle<VkPipeline, Device>(
+      pipeline,
+      [](VkPipeline pipeline, Device &device) -> void {
+        device.vkDestroyPipeline(device, pipeline, nullptr);
+      },
+      device);
 }

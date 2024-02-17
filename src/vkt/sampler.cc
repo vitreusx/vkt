@@ -7,30 +7,17 @@ Sampler::Sampler(std::shared_ptr<Device> device,
   createInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
   createInfo.pNext = nullptr;
 
+  VkSampler sampler;
   VK_CHECK(device->vkCreateSampler(*device, &createInfo, nullptr, &sampler));
-}
 
-Sampler::Sampler(Sampler &&other) {
-  *this = std::move(other);
-}
-
-Sampler &Sampler::operator=(Sampler &&other) {
-  destroy();
-  device = std::move(other.device);
-  sampler = other.sampler;
-  other.sampler = VK_NULL_HANDLE;
-  return *this;
-}
-
-Sampler::~Sampler() {
-  destroy();
+  this->sampler = Handle<VkSampler, Device>(
+      sampler,
+      [](VkSampler sampler, Device &device) -> void {
+        device.vkDestroySampler(device, sampler, nullptr);
+      },
+      device);
 }
 
 Sampler::operator VkSampler() {
   return sampler;
-}
-
-void Sampler::destroy() {
-  if (sampler != VK_NULL_HANDLE)
-    device->vkDestroySampler(*device, sampler, nullptr);
 }

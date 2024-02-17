@@ -30,30 +30,16 @@ RenderPass::RenderPass(std::shared_ptr<Device> device,
       .dependencyCount = (uint32_t)createInfo.dependencies.size(),
       .pDependencies = createInfo.dependencies.data()};
 
-  VK_CHECK(device->vkCreateRenderPass(*device, &vk_createInfo, VK_NULL_HANDLE,
+  VkRenderPass renderPass;
+  VK_CHECK(device->vkCreateRenderPass(*device, &vk_createInfo, nullptr,
                                       &renderPass));
-}
 
-RenderPass::RenderPass(RenderPass &&other) {
-  *this = std::move(other);
-}
-
-RenderPass &RenderPass::operator=(RenderPass &&other) {
-  destroy();
-  device = std::move(other.device);
-  renderPass = other.renderPass;
-  other.renderPass = VK_NULL_HANDLE;
-  return *this;
-}
-
-RenderPass::~RenderPass() {
-  destroy();
-}
-
-void RenderPass::destroy() {
-  if (renderPass != VK_NULL_HANDLE)
-    device->vkDestroyRenderPass(*device, renderPass, VK_NULL_HANDLE);
-  renderPass = VK_NULL_HANDLE;
+  this->renderPass = Handle<VkRenderPass, Device>(
+      renderPass,
+      [](VkRenderPass renderPass, Device &device) -> void {
+        device.vkDestroyRenderPass(device, renderPass, nullptr);
+      },
+      device);
 }
 
 RenderPass::operator VkRenderPass() {

@@ -40,17 +40,9 @@ using DescriptorOp = std::variant<WriteDescriptorSet, CopyDescriptorSet>;
 
 class Device {
 public:
-  Device(VkDevice &&device);
+  Device() = default;
   Device(std::shared_ptr<Loader> loader, PhysicalDevice physicalDevice,
          DeviceCreateInfo const &deviceCreateInfo);
-
-  Device(Device const &) = delete;
-  Device &operator=(Device const &) = delete;
-
-  Device(Device &&) = delete;
-  Device &operator=(Device &&) = delete;
-
-  ~Device();
 
   operator VkDevice();
 
@@ -118,7 +110,7 @@ public:
 
 private:
   std::shared_ptr<Loader> loader = {};
-  VkDevice device = VK_NULL_HANDLE;
+  Handle<VkDevice, Loader> device;
 
   void loadFunctions();
 };

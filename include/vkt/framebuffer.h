@@ -16,20 +16,11 @@ public:
   Framebuffer(std::shared_ptr<Device> device,
               FramebufferCreateInfo const &createInfo);
 
-  Framebuffer(Framebuffer const &) = delete;
-  Framebuffer &operator=(Framebuffer const &) = delete;
-
-  Framebuffer(Framebuffer &&other);
-  Framebuffer &operator=(Framebuffer &&other);
-
-  ~Framebuffer();
-  void destroy();
-
   operator VkFramebuffer();
 
 private:
   std::shared_ptr<Device> device = {};
   std::shared_ptr<RenderPass> renderPass = {};
-  VkFramebuffer framebuffer = VK_NULL_HANDLE;
+  Handle<VkFramebuffer, Device> framebuffer;
   std::vector<std::shared_ptr<ImageView>> attachments = {};
 };

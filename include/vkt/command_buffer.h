@@ -16,14 +16,6 @@ public:
   CommandBuffer(std::shared_ptr<Device> device,
                 CommandBufferAllocateInfo allocInfo);
 
-  CommandBuffer(CommandBuffer const &) = delete;
-  CommandBuffer &operator=(CommandBuffer const &) = delete;
-
-  CommandBuffer(CommandBuffer &&) = delete;
-  CommandBuffer &operator=(CommandBuffer &&) = delete;
-
-  ~CommandBuffer();
-
   operator VkCommandBuffer();
 
   void reset(VkCommandBufferResetFlags flags = {});
@@ -54,8 +46,7 @@ public:
 
 private:
   std::shared_ptr<Device> device;
-  std::shared_ptr<CommandPool> commandPool;
-  VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+  Handle<VkCommandBuffer, Device, CommandPool> commandBuffer = {};
 
   void loadFunctions();
 };

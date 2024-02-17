@@ -10,14 +10,8 @@ struct SwapchainDetails {
 
 class Surface {
 public:
+  Surface() = default;
   Surface(std::shared_ptr<Instance> instance, Window &window);
-  Surface(Surface const &) = delete;
-  Surface &operator=(Surface const &) = delete;
-
-  Surface(Surface &&other);
-  Surface &operator=(Surface &&other);
-
-  ~Surface();
 
   operator VkSurfaceKHR();
 
@@ -26,7 +20,5 @@ public:
 private:
   std::shared_ptr<Instance> instance = {};
   std::shared_ptr<Loader> loader = {};
-  VkSurfaceKHR surfaceKHR = VK_NULL_HANDLE;
-
-  void destroy();
+  Handle<VkSurfaceKHR, Instance> surfaceKHR;
 };
