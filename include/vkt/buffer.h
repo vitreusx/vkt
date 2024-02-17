@@ -16,7 +16,9 @@ public:
   Buffer() = default;
   Buffer(std::shared_ptr<Device> device, BufferCreateInfo const &createInfo);
 
-  DeviceMemory allocMemory(VkMemoryPropertyFlags properties);
+  DeviceMemory &allocMemory(VkMemoryPropertyFlags properties);
+  void bindMemory(std::shared_ptr<DeviceMemory> deviceMemory,
+                  VkDeviceSize offset = 0);
 
   VkMemoryRequirements getMemoryRequirements();
   void stage(void *data, VkDeviceSize size, Queue &transferQueue);
@@ -26,4 +28,5 @@ public:
 private:
   std::shared_ptr<Device> device = {};
   Handle<VkBuffer, Device> buffer = {};
+  std::shared_ptr<DeviceMemory> memory;
 };

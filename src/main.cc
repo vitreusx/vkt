@@ -370,7 +370,6 @@ int main() {
   std::vector<VkImage> images;
   std::vector<std::shared_ptr<ImageView>> imageViews;
   Image depthImage;
-  DeviceMemory depthImageMemory;
   std::shared_ptr<ImageView> depthImageView;
   VkExtent2D swapExtent;
   SwapchainCreateInfo swapchainInfo;
@@ -494,8 +493,7 @@ int main() {
                         .queueFamilyIndices = {deviceInfo.graphicsQueueIndex},
                         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED});
 
-    depthImageMemory =
-        depthImage.allocMemory(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    depthImage.allocMemory(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
     depthImageView = std::make_shared<ImageView>(
         device, ImageViewCreateInfo{
@@ -653,7 +651,6 @@ int main() {
 
   struct Texture {
     Image image;
-    DeviceMemory memory;
     ImageView imageView;
     Sampler sampler;
     VkImageLayout imageLayout;
@@ -702,7 +699,7 @@ int main() {
                                                deviceInfo.transferQueueIndex},
                         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED});
 
-    tex.memory = tex.image.allocMemory(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    tex.image.allocMemory(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
     tex.imageView = ImageView(
         device, ImageViewCreateInfo{
@@ -753,7 +750,6 @@ int main() {
 
   struct Material {
     Buffer dataBuf;
-    DeviceMemory dataBufMemory;
     std::vector<std::string> texNames;
   };
   std::vector<Material> vkMaterials;
@@ -780,8 +776,8 @@ int main() {
                         .sharingMode = VK_SHARING_MODE_CONCURRENT,
                         .queueFamilyIndices = {deviceInfo.graphicsQueueIndex,
                                                deviceInfo.transferQueueIndex}});
-    vkMat.dataBufMemory =
-        vkMat.dataBuf.allocMemory(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    vkMat.dataBuf.allocMemory(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     vkMat.dataBuf.stage(&matData, sizeof(matData), transferQueue);
 
     vkMat.texNames = {mat.ambient_texname,  mat.diffuse_texname,
@@ -800,7 +796,7 @@ int main() {
                                          deviceInfo.transferQueueIndex},
               });
 
-  auto vertexBufferMemory =
+  auto &vertexBufferMemory =
       vertexBuffer->allocMemory(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
   vertexBuffer->stage(vertices.data(), vertices.size() * sizeof(vertices[0]),
                       transferQueue);
@@ -814,7 +810,7 @@ int main() {
                        .queueFamilyIndices = {deviceInfo.graphicsQueueIndex,
                                               deviceInfo.transferQueueIndex}});
 
-  auto indexBufferMemory =
+  auto &indexBufferMemory =
       indexBuffer->allocMemory(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
   indexBuffer->stage(indices.data(), indices.size() * sizeof(indices[0]),
                      transferQueue);
@@ -896,9 +892,8 @@ int main() {
     std::shared_ptr<CommandBuffer> commandBuffer;
     Fence inFlight;
     Semaphore imageAvailable, renderFinished;
-    std::shared_ptr<Buffer> unifVsBuffer;
-    std::shared_ptr<DeviceMemory> unifVsMemory;
-    DeviceMemoryMap unifVsPtr;
+    Buffer unifVsBuffer;
+    std::shared_ptr<void> unifVsPtr;
     VkDescriptorSet perFrameSet;
     std::vector<VkDescriptorSet> perMaterialSets;
   };
@@ -918,18 +913,18 @@ int main() {
                     .queueFamilyIndex = deviceInfo.graphicsQueueIndex}),
             .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY});
 
-    frame.unifVsBuffer = std::make_shared<Buffer>(
+    frame.unifVsBuffer = Buffer(
         device, BufferCreateInfo{
                     .size = sizeof(VSUnif),
                     .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                     .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
                     .queueFamilyIndices = {deviceInfo.graphicsQueueIndex}});
 
-    frame.unifVsMemory = std::make_shared<DeviceMemory>(
-        frame.unifVsBuffer->allocMemory(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT));
+    auto &unifVsMemory =
+        frame.unifVsBuffer.allocMemory(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-    frame.unifVsPtr = DeviceMemoryMap(frame.unifVsMemory);
+    frame.unifVsPtr = unifVsMemory.map();
 
     frame.perFrameSet = perFrameSets[frameIndex];
     descriptorOps.push_back(WriteDescriptorSet{
@@ -937,7 +932,7 @@ int main() {
         .dstBinding = 0,
         .dstArrayElement = 0,
         .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .bufferInfos = {VkDescriptorBufferInfo{.buffer = *frame.unifVsBuffer,
+        .bufferInfos = {VkDescriptorBufferInfo{.buffer = frame.unifVsBuffer,
                                                .offset = 0,
                                                .range = sizeof(VSUnif)}}});
 

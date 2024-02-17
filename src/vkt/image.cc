@@ -59,15 +59,23 @@ VkMemoryRequirements Image::getMemoryRequirements() {
   return memRequirements;
 }
 
-DeviceMemory Image::allocMemory(VkMemoryPropertyFlags properties) {
+DeviceMemory &Image::allocMemory(VkMemoryPropertyFlags properties) {
   auto memoryReqs = getMemoryRequirements();
   auto memoryTypeIndex = device->physDev.findMemoryTypeIndex(
       memoryReqs.memoryTypeBits, properties);
-  auto memory = DeviceMemory(
+  auto memory = std::make_shared<DeviceMemory>(
       device, MemoryAllocateInfo{.size = memoryReqs.size,
                                  .memoryTypeIndex = memoryTypeIndex.value()});
-  VK_CHECK(device->vkBindImageMemory(*device, image, memory, 0));
-  return memory;
+
+  VK_CHECK(device->vkBindImageMemory(*device, image, *memory, 0));
+  this->imageMemory = memory;
+  return *memory;
+}
+
+void Image::bindMemory(std::shared_ptr<DeviceMemory> deviceMemory,
+                       VkDeviceSize offset) {
+  VK_CHECK(device->vkBindImageMemory(*device, image, *deviceMemory, offset));
+  this->imageMemory = deviceMemory;
 }
 
 void Image::stage(void *data, VkDeviceSize size, Queue &transferQueue,
@@ -81,12 +89,12 @@ void Image::stage(void *data, VkDeviceSize size, Queue &transferQueue,
                                .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
                                .queueFamilyIndices = {queueFamilyIndex}});
 
-  auto stagingMemory =
+  auto &stagingMemory =
       staging.allocMemory(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                           VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
   {
-    auto stagingMap = DeviceMemoryMap(stack_ptr(stagingMemory));
+    auto stagingMap = stagingMemory.map();
     std::memcpy(stagingMap.get(), data, size);
   }
 

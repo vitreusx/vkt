@@ -29,44 +29,22 @@ DeviceMemory::operator VkDeviceMemory() {
   return deviceMemory;
 }
 
-void DeviceMemory::unmapMemory() {
-  device->vkUnmapMemory(*device, deviceMemory);
-}
+std::shared_ptr<void> DeviceMemory::map(VkDeviceSize offset,
+                                        VkDeviceSize size) {
+  if (!memoryMap.expired())
+    return memoryMap.lock();
 
-DeviceMemoryMap::DeviceMemoryMap(std::shared_ptr<DeviceMemory> deviceMemory,
-                                 VkDeviceSize offset, VkDeviceSize size) {
-  this->deviceMemory = deviceMemory;
-
-  if (!deviceMemory->memoryMap.expired())
-    throw std::runtime_error("Device memory already mapped.");
-
-  size = std::min(size, deviceMemory->allocationSize);
-
+  size = std::min(size, allocationSize);
   void *ptr;
-  VK_CHECK(deviceMemory->device->vkMapMemory(*deviceMemory->device,
-                                             deviceMemory->deviceMemory, offset,
-                                             size, {}, &ptr));
+  VK_CHECK(device->vkMapMemory(*device, deviceMemory, offset, size, {}, &ptr));
 
-  this->ptr = std::shared_ptr<void>(ptr, [](void *ptr) -> void {});
-}
+  VkDeviceMemory deviceMemory = this->deviceMemory;
+  std::shared_ptr<Device> device = this->device;
+  auto unmapMemory = [deviceMemory, device](void *ptr) -> void {
+    device->vkUnmapMemory(*device, deviceMemory);
+  };
 
-DeviceMemoryMap::~DeviceMemoryMap() {
-  if (ptr.use_count() == 1)
-    deviceMemory->unmapMemory();
-}
-
-void *DeviceMemoryMap::get() const {
-  return ptr.get();
-}
-
-DeviceMemoryMap::DeviceMemoryMap(DeviceMemoryMap &&other) {
-  *this = std::move(other);
-}
-
-DeviceMemoryMap &DeviceMemoryMap::operator=(DeviceMemoryMap &&other) {
-  if (this != &other) {
-    deviceMemory = std::move(other.deviceMemory);
-    ptr = std::move(other.ptr);
-  }
-  return *this;
+  auto memoryMap = std::shared_ptr<void>(ptr, unmapMemory);
+  this->memoryMap = memoryMap;
+  return memoryMap;
 }

@@ -29,7 +29,9 @@ public:
 
   VkMemoryRequirements getMemoryRequirements();
 
-  DeviceMemory allocMemory(VkMemoryPropertyFlags properties);
+  DeviceMemory &allocMemory(VkMemoryPropertyFlags properties);
+  void bindMemory(std::shared_ptr<DeviceMemory> deviceMemory,
+                  VkDeviceSize offset = 0);
 
   void stage(void *data, VkDeviceSize size, Queue &transferQueue,
              VkPipelineStageFlags dstStageMask, VkAccessFlags dstAccessMask,
@@ -38,6 +40,7 @@ public:
 private:
   std::shared_ptr<Device> device = {};
   Handle<VkImage, Device> image;
+  std::shared_ptr<DeviceMemory> imageMemory;
   ImageCreateInfo createInfo = {};
   VkImageFormatProperties formatProps;
 };

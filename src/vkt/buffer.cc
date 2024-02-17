@@ -54,12 +54,12 @@ void Buffer::stage(void *data, VkDeviceSize size, Queue &transferQueue) {
                                  .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
                                  .queueFamilyIndices = {queueFamilyIndex}});
 
-  auto stagingMemory =
+  auto &stagingMemory =
       staging.allocMemory(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                           VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
   {
-    auto stagingMemoryMap = DeviceMemoryMap(stack_ptr(stagingMemory));
+    auto stagingMemoryMap = stagingMemory.map();
     std::memcpy(stagingMemoryMap.get(), data, size);
   }
 
@@ -91,13 +91,20 @@ void Buffer::stage(void *data, VkDeviceSize size, Queue &transferQueue) {
   transferQueue.wait();
 }
 
-DeviceMemory Buffer::allocMemory(VkMemoryPropertyFlags properties) {
+DeviceMemory &Buffer::allocMemory(VkMemoryPropertyFlags properties) {
   auto memoryReqs = getMemoryRequirements();
   auto memoryTypeIndex = device->physDev.findMemoryTypeIndex(
       memoryReqs.memoryTypeBits, properties);
-  auto memory = DeviceMemory(
+  auto memory = std::make_shared<DeviceMemory>(
       device, MemoryAllocateInfo{.size = memoryReqs.size,
                                  .memoryTypeIndex = memoryTypeIndex.value()});
-  VK_CHECK(device->vkBindBufferMemory(*device, buffer, memory, 0));
-  return memory;
+  VK_CHECK(device->vkBindBufferMemory(*device, buffer, *memory, 0));
+  this->memory = memory;
+  return *memory;
+}
+
+void Buffer::bindMemory(std::shared_ptr<DeviceMemory> deviceMemory,
+                        VkDeviceSize offset) {
+  VK_CHECK(device->vkBindBufferMemory(*device, buffer, *deviceMemory, 0));
+  this->memory = deviceMemory;
 }
