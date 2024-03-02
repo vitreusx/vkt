@@ -85,6 +85,8 @@
         "shared_mutex": "cpp",
         "typeindex": "cpp",
         "filesystem": "cpp",
-        "*.ipp": "cpp"
+        "*.ipp": "cpp",
+        "forward_list": "cpp",
+        "hash_set": "cpp"
     }
 }

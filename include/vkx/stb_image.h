@@ -6,6 +6,7 @@
 class StbImage {
 public:
   StbImage(std::filesystem::path const &filename, int mode = STBI_default);
+  StbImage(const stbi_uc *buffer, int len, int mode = STBI_default);
 
   StbImage(StbImage const &) = delete;
   StbImage &operator=(StbImage const &) = delete;

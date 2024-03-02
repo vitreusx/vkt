@@ -46,7 +46,7 @@ VkMemoryRequirements Buffer::getMemoryRequirements() {
   return memRequirements;
 }
 
-void Buffer::stage(void *data, VkDeviceSize size, Queue &transferQueue) {
+void Buffer::stage(const void *data, VkDeviceSize size, Queue &transferQueue) {
   auto queueFamilyIndex = transferQueue.getQueueFamilyIndex();
 
   auto staging = Buffer(device, {.size = size,

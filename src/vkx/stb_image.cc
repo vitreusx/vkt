@@ -6,6 +6,12 @@ StbImage::StbImage(std::filesystem::path const &filename, int mode) {
   data = stbi_load(filename.c_str(), &width, &height, &true_mode, mode);
 }
 
+StbImage::StbImage(const stbi_uc *buffer, int len, int mode) {
+  int true_mode;
+  this->mode = mode;
+  data = stbi_load_from_memory(buffer, len, &width, &height, &true_mode, mode);
+}
+
 StbImage::StbImage(StbImage &&other) {
   *this = std::move(other);
 }

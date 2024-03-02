@@ -6,6 +6,11 @@ add_subdirectory(ext/spdlog)
 add_subdirectory(ext/glm)
 add_subdirectory(ext/stb)
 
+set(ASSIMP_BUILD_TESTS OFF)
+set(ASSIMP_INSTALL OFF)
+set(BUILD_SHARED_LIBS OFF)
+add_subdirectory(ext/assimp)
+
 set(TARGET vkt)
 add_library(${TARGET})
 set_target_properties(${TARGET} PROPERTIES LINKER_LANGUAGE CXX)
@@ -47,7 +52,7 @@ target_compile_options(${TARGET}
     $<$<CONFIG:Release>:-O2>)
 
 target_link_libraries(${TARGET} PUBLIC
-    vkt tinyobjloader spdlog::spdlog stb)
+    vkt tinyobjloader spdlog::spdlog stb assimp glm::glm)
 
 function(add_spirv_shader INPUT_FILE OUTPUT_FILE)
     cmake_path(GET OUTPUT_FILE PARENT_PATH OUTPUT_PARENT)
@@ -83,7 +88,7 @@ foreach(TARGET main stuff)
     add_executable(${TARGET} src/${TARGET}.cc)
 
     target_link_libraries(${TARGET} PRIVATE
-        vkt vkx spdlog::spdlog glm::glm tinyobjloader stb)
+        vkt vkx spdlog::spdlog glm::glm tinyobjloader stb assimp)
 
     add_dependencies(${TARGET} shaders)
 

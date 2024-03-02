@@ -37,10 +37,11 @@ public:
              VkPipelineStageFlags dstStageMask, VkAccessFlags dstAccessMask,
              VkImageLayout dstLayout);
 
+  ImageCreateInfo createInfo = {};
+
 private:
   std::shared_ptr<Device> device = {};
   Handle<VkImage, Device> image;
   std::shared_ptr<DeviceMemory> imageMemory;
-  ImageCreateInfo createInfo = {};
   VkImageFormatProperties formatProps;
 };

@@ -21,7 +21,7 @@ public:
                   VkDeviceSize offset = 0);
 
   VkMemoryRequirements getMemoryRequirements();
-  void stage(void *data, VkDeviceSize size, Queue &transferQueue);
+  void stage(const void *data, VkDeviceSize size, Queue &transferQueue);
 
   operator VkBuffer();
 

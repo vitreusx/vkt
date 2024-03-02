@@ -1,3 +1,4 @@
+#pragma once
 #include <cstdlib>
 #include <vkx/model.h>
 #include <vkt/sampler.h>
@@ -62,7 +63,6 @@ enum DescriptorSetType : uint32_t {
   PER_RENDER,
   PER_OBJECT,
   PER_MATERIAL,
-  PER_TEXTURE_SET,
   NUM_DESCRIPTOR_SET_TYPES
 };
 
@@ -265,6 +265,49 @@ public:
     return perObject;
   }
 
+  VkDescriptorSet perMaterialSet(VkMaterial &vkMat) {
+    auto set = autoPool.create(PER_MATERIAL);
+
+    device->updateDescriptorSets(
+        {WriteDescriptorSet{.dstSet = set,
+                            .dstBinding = 0,
+                            .dstArrayElement = 0,
+                            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                            .bufferInfos = {VkDescriptorBufferInfo{
+                                .buffer = vkMat.materialBuf,
+                                .offset = 0,
+                                .range = sizeof(Material)}}},
+         WriteDescriptorSet{.dstSet = set,
+                            .dstBinding = 1,
+                            .dstArrayElement = 0,
+                            .descriptorType =
+                                VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                            .imageInfos = {VkDescriptorImageInfo{
+                                .sampler = vkMat.ambientTex.sampler,
+                                .imageView = vkMat.ambientTex.imageView,
+                                .imageLayout = vkMat.ambientTex.imageLayout}}},
+         WriteDescriptorSet{.dstSet = set,
+                            .dstBinding = 2,
+                            .dstArrayElement = 0,
+                            .descriptorType =
+                                VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                            .imageInfos = {VkDescriptorImageInfo{
+                                .sampler = vkMat.diffuseTex.sampler,
+                                .imageView = vkMat.diffuseTex.imageView,
+                                .imageLayout = vkMat.diffuseTex.imageLayout}}},
+         WriteDescriptorSet{
+             .dstSet = set,
+             .dstBinding = 3,
+             .dstArrayElement = 0,
+             .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+             .imageInfos = {VkDescriptorImageInfo{
+                 .sampler = vkMat.specularTex.sampler,
+                 .imageView = vkMat.specularTex.imageView,
+                 .imageLayout = vkMat.specularTex.imageLayout}}}});
+
+    return set;
+  }
+
 public:
   std::shared_ptr<Device> device;
   std::shared_ptr<Queue> graphicsQueue;
@@ -276,10 +319,4 @@ public:
   std::vector<ShaderStageCreateInfo> shaderStages;
 };
 
-#undef VK_ALIGN
 } // namespace phong
-
-int main() {
-  Model model("assets/sponza/sponza.obj");
-  return EXIT_SUCCESS;
-}
