@@ -1,17 +1,5 @@
 #version 450
-
-layout(set = 3, binding = 0) uniform sampler2D textures[64];
-
-layout(std140, set = 0, binding = 1) uniform Scene {
-  vec3 ambientLight;
-  vec3 lightPos;
-  vec3 lightColor;
-  vec3 cameraPos;
-  int shadingModel;
-};
-
-#define BLEND_OP_MUL 0
-#define BLEND_OP_ADD 1
+#extension GL_EXT_nonuniform_qualifier : enable
 
 struct TexStack {
   vec3 color;
@@ -20,12 +8,32 @@ struct TexStack {
   float blendFactor;
 };
 
-layout(std140, set = 2, binding = 0) uniform Material {
+#define RENDER_SET 0
+#define MODEL_SET 1
+#define MESH_SET 2
+
+layout(set = MESH_SET, binding = 0)
+uniform sampler2D textures[];
+
+layout(std140, set = RENDER_SET, binding = 1)
+uniform Scene {
+  vec3 ambientLight;
+  vec3 lightPos;
+  vec3 lightColor;
+  vec3 cameraPos;
+  int shadingModel;
+};
+
+layout(std140, set = MESH_SET, binding = 0)
+uniform Material {
   TexStack ambient;
   TexStack diffuse;
   TexStack specular;
   float shininess;
 };
+
+#define BLEND_OP_MUL 0
+#define BLEND_OP_ADD 1
 
 vec3 evalStack(in TexStack stack, in vec2 uv) {
   vec3 outColor = stack.color;

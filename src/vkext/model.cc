@@ -1,4 +1,4 @@
-#include <vkx/model.h>
+#include <vkext/model.h>
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
@@ -9,6 +9,7 @@ static std::filesystem::path toPath(std::string path) {
   return path;
 }
 
+namespace vkext {
 Model::Model(std::filesystem::path const &path) {
   Assimp::Importer importer;
 
@@ -103,3 +104,4 @@ Model::Model(std::filesystem::path const &path) {
     aiMat->Get(AI_MATKEY_SHADING_MODEL, mat.shadingModel);
   }
 }
+} // namespace vkext

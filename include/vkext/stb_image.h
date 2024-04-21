@@ -3,6 +3,7 @@
 #include <optional>
 #include <stb_image.h>
 
+namespace vkext {
 class StbImage {
 public:
   StbImage(std::filesystem::path const &filename, int mode = STBI_default);
@@ -25,3 +26,5 @@ public:
 private:
   void destroy();
 };
+
+}

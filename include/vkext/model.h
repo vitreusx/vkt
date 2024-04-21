@@ -4,6 +4,7 @@
 #include <assimp/material.h>
 #include <assimp/texture.h>
 
+namespace vkext {
 struct Mesh {
   std::vector<glm::vec3> pos, normal, color;
   std::vector<std::vector<glm::vec2>> texCoord;
@@ -35,3 +36,4 @@ public:
   std::vector<Mesh> meshes;
   std::vector<Material> materials;
 };
+}

@@ -1,5 +1,6 @@
-#include <vkx/stb_image.h>
+#include <vkext/stb_image.h>
 
+namespace vkext {
 StbImage::StbImage(std::filesystem::path const &filename, int mode) {
   int true_mode;
   this->mode = mode;
@@ -38,4 +39,5 @@ void StbImage::destroy() {
   if (data != nullptr)
     stbi_image_free(data);
   data = nullptr;
+}
 }
